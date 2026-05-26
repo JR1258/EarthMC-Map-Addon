@@ -1,0 +1,8 @@
+{
+  "key.category.townymapaddon.keybinds": "TownyMap Addon",
+  "key.townymapaddon.toggle_squaremap": "Toggle Squaremap Overlay",
+  "key.townymapaddon.cycle_borders": "Cycle Border Overlay",
+  "key.townymapaddon.cycle_map_mode": "Cycle Town Map Mode",
+  "key.townymapaddon.toggle_chunk_counter": "Toggle Chunk Counter",
+  "key.townymapaddon.refresh_towns": "Refresh Town Claims"
+}

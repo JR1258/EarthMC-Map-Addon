@@ -1,0 +1,94 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group   = project.maven_group
+base { archivesName = project.archives_base_name }
+
+repositories {
+    maven { url 'https://maven.fabricmc.net/' }
+    maven { url 'https://maven.terraformersmc.com/releases/' }
+    // Xaero's mods — place the Fabric 1.21.x JARs into libs/
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    minecraft        "com.mojang:minecraft:${project.minecraft_version}"
+    mappings         "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Optional: ModMenu for in-game config screen. Adjust version to match your MC version.
+    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+    // Compile-only: users must have Xaero's mods installed at runtime.
+    modCompileOnly fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+processResources {
+    dependsOn 'prebuildBorderTiles'
+    inputs.property "version", project.version
+    filteringCharset 'UTF-8'
+    from(layout.buildDirectory.dir("generated/resources/prebuiltBorders"))
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.register('compilePrebuildBorderTiles', JavaCompile) {
+    source = fileTree('tools') { include 'PrebuildBorderTiles.java' }
+    destinationDirectory = layout.buildDirectory.dir('tools/classes')
+    classpath = files()
+    sourceCompatibility = '21'
+    targetCompatibility = '21'
+}
+
+tasks.register('prebuildBorderTiles', JavaExec) {
+    dependsOn 'compilePrebuildBorderTiles'
+    inputs.file 'src/main/resources/assets/townymapaddon/borders/borders.nostra.countries.json'
+    inputs.file 'src/main/resources/assets/townymapaddon/borders/borders.nostra.states-and-countries.json'
+    inputs.file 'tools/PrebuildBorderTiles.java'
+    outputs.dir layout.buildDirectory.dir('generated/resources/prebuiltBorders/assets/townymapaddon/prebuilt-borders')
+    classpath = files(layout.buildDirectory.dir('tools/classes'))
+    mainClass = 'PrebuildBorderTiles'
+    doFirst {
+        delete layout.buildDirectory.dir('generated/resources/prebuiltBorders')
+    }
+    args file('src/main/resources/assets/townymapaddon/borders/borders.nostra.countries.json').absolutePath,
+         file('src/main/resources/assets/townymapaddon/borders/borders.nostra.states-and-countries.json').absolutePath,
+         layout.buildDirectory.dir('generated/resources/prebuiltBorders').get().asFile.absolutePath
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.archivesBaseName}" }
+    }
+}
+
+// Automatically deploy the remapped JAR to the Modrinth launcher profile after build.
+def modsDir = file(new File(System.getProperty("user.home"), "Library/Application Support/ModrinthApp/profiles/1.21.11/mods"))
+
+tasks.register('deployToMods', Copy) {
+    dependsOn remapJar
+    from(remapJar.archiveFile)
+    into(modsDir)
+    // Remove any older version of this mod so there are no duplicates
+    doFirst {
+        modsDir.listFiles()?.each { f ->
+            if (f.name.startsWith(project.archives_base_name)) f.delete()
+        }
+    }
+    doLast {
+        println "Deployed ${remapJar.archiveFileName.get()} → ${modsDir}"
+    }
+}
+
+build.finalizedBy(deployToMods)

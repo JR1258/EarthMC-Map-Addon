@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "townymapaddon",
+  "version": "${version}",
+  "name": "TownyMap Addon",
+  "description": "Overlays EarthMC Towny town borders and online players on Xaero's WorldMap.",
+  "authors": ["JR1258"],
+  "icon": "assets/townymapaddon/icon.png",
+  "license": "Apache-2.0",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["net.townymap.TownyMapMod"],
+    "modmenu": ["net.townymap.gui.TownyMapModMenuIntegration"]
+  },
+  "mixins": [
+    "townymapaddon.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api":   "*",
+    "minecraft":    "1.21.11"
+  },
+  "suggests": {
+    "xaeroworldmap": "*",
+    "xaerosminimap": "*",
+    "modmenu":       "*"
+  }
+}

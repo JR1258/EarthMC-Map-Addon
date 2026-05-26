@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.townymap.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MixinCommonMinimapRenderer",
+    "MixinGuiMap",
+    "MixinMinimapModuleRenderer"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

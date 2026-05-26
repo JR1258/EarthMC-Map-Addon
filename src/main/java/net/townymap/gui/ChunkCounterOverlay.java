@@ -212,7 +212,7 @@ public final class ChunkCounterOverlay {
         if (GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
             long key = key(floorToChunk(worldX), floorToChunk(worldZ));
             if (key != lastRightDownKey) {
-                applyDragAction(activeSelection(TownyMapMod.getConfig()), key);
+                applyDragPath(activeSelection(TownyMapMod.getConfig()), lastRightDownKey, key);
                 lastRightDownKey = key;
             }
         } else {
@@ -520,6 +520,38 @@ public final class ChunkCounterOverlay {
             selection.dirty = true;
             persistDirty = true;
             maybePersistSelection();
+        }
+    }
+
+    private static void applyDragPath(SelectionState selection, long fromKey, long toKey) {
+        if (fromKey == Long.MIN_VALUE) {
+            applyDragAction(selection, toKey);
+            return;
+        }
+
+        int x0 = chunkX(fromKey);
+        int z0 = chunkZ(fromKey);
+        int x1 = chunkX(toKey);
+        int z1 = chunkZ(toKey);
+        int dx = Math.abs(x1 - x0);
+        int dz = Math.abs(z1 - z0);
+        int stepX = x0 < x1 ? 1 : -1;
+        int stepZ = z0 < z1 ? 1 : -1;
+        int error = dx - dz;
+
+        while (true) {
+            applyDragAction(selection, key(x0, z0));
+            if (x0 == x1 && z0 == z1) return;
+
+            int doubledError = error * 2;
+            if (doubledError > -dz) {
+                error -= dz;
+                x0 += stepX;
+            }
+            if (doubledError < dx) {
+                error += dx;
+                z0 += stepZ;
+            }
         }
     }
 

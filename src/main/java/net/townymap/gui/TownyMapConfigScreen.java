@@ -32,7 +32,7 @@ public class TownyMapConfigScreen extends Screen {
     private int scrollOffset;
 
     public TownyMapConfigScreen(Screen parent) {
-        super(Text.literal("TownyMap Addon Settings"));
+        super(Text.literal("EarthMC Map Addon Settings"));
         this.parent = parent;
     }
 

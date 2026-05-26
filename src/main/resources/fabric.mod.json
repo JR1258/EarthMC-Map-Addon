@@ -2,9 +2,14 @@
   "schemaVersion": 1,
   "id": "townymapaddon",
   "version": "${version}",
-  "name": "TownyMap Addon",
+  "name": "EarthMC Map Addon",
   "description": "Overlays EarthMC Towny town borders and online players on Xaero's WorldMap.",
   "authors": ["JR1258"],
+  "contact": {
+    "homepage": "https://github.com/JR1258/EarthMC-Map-Addon",
+    "sources": "https://github.com/JR1258/EarthMC-Map-Addon",
+    "issues": "https://github.com/JR1258/EarthMC-Map-Addon/issues"
+  },
   "icon": "assets/townymapaddon/icon.png",
   "license": "Apache-2.0",
   "environment": "client",

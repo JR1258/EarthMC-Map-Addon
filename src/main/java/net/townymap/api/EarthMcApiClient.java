@@ -196,6 +196,7 @@ public class EarthMcApiClient {
 
     private TownPopupData parseTown(JsonObject t) {
         String name    = str(t, "name", "?");
+        String discord = str(t, "discord", "");
         String board   = str(t, "board", "");
 
         String mayor = "?";
@@ -252,7 +253,7 @@ public class EarthMcApiClient {
             if (status.has("hasNation")) hasNation = status.get("hasNation").getAsBoolean();
         }
 
-        return new TownPopupData(name, nation, board, mayor, chunks, founded, pvp,
+        return new TownPopupData(name, nation, discord, board, mayor, chunks, founded, pvp,
                 isPublic, canOutsidersSpawn, isOverClaimed, isOpen, isForSale, hasNation, residents, balance);
     }
 

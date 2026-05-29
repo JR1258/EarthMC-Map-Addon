@@ -6,9 +6,11 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.util.Util;
 import net.townymap.model.EarthMcNationData;
 import net.townymap.model.TownPopupData;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -26,6 +28,7 @@ public final class TownInfoOverlay {
     private static final int PADDING     = 16;
     private static final int LINE_HEIGHT = 15;
     private static final int BUTTON_HEIGHT = 20;
+    private static final int STAR_HITBOX = 18;
     private static final long DISPLAY_MS = 12_000;
 
     private static final int BG_COLOR     = 0xD8101010;
@@ -36,6 +39,7 @@ public final class TownInfoOverlay {
     private static long showUntil;
     private static boolean loading;
     private static int favoriteX1, favoriteY1, favoriteX2, favoriteY2;
+    private static int discordX1, discordY1, discordX2, discordY2;
     private static int routeX1, routeY1, routeX2, routeY2;
     private static boolean hasButtons;
 
@@ -90,8 +94,9 @@ public final class TownInfoOverlay {
             if (visible.length() > longestVisibleChars) longestVisibleChars = visible.length();
         }
         int horizontalPadding = PADDING + extraHorizontalPadding(longestVisibleChars);
-        int boxW = maxW + horizontalPadding * 2;
         boolean showButtons = !loading && currentData != null && currentData != TownPopupData.WILDERNESS;
+        int starReserve = showButtons ? STAR_HITBOX + 6 : 0;
+        int boxW = maxW + horizontalPadding * 2 + starReserve;
         if (showButtons) {
             boxW = Math.max(boxW, PADDING * 2 + 52 * 2 + 6);
         }
@@ -107,6 +112,9 @@ public final class TownInfoOverlay {
         // Background + border
         ctx.fill(bx - 1, by - 1, bx + boxW + 1, by + boxH + 1, BORDER_COLOR);
         ctx.fill(bx,     by,     bx + boxW,     by + boxH,     BG_COLOR);
+        if (showButtons) {
+            drawFavoriteStar(ctx, tr, bx, by, boxW, favorite);
+        }
 
         // Text — use the String overload (same path as player name labels)
         int ty = by + PADDING;
@@ -117,7 +125,7 @@ public final class TownInfoOverlay {
 
         hasButtons = false;
         if (showButtons) {
-            drawButtons(ctx, tr, bx, by + boxH - PADDING - BUTTON_HEIGHT + 2, boxW, favorite);
+            drawButtons(ctx, tr, bx, by + boxH - PADDING - BUTTON_HEIGHT + 2, boxW);
         }
     }
 
@@ -125,6 +133,10 @@ public final class TownInfoOverlay {
         if (!hasButtons || currentData == null || currentData == TownPopupData.WILDERNESS) return ActionResult.none();
         String town = currentData.townName();
         if (inside(mouseX, mouseY, favoriteX1, favoriteY1, favoriteX2, favoriteY2)) return ActionResult.favorite(town);
+        if (inside(mouseX, mouseY, discordX1, discordY1, discordX2, discordY2)) {
+            String url = normalizeDiscordUrl(currentData.discord());
+            return url.isBlank() ? ActionResult.none() : ActionResult.discord(town, url);
+        }
         if (inside(mouseX, mouseY, routeX1, routeY1, routeX2, routeY2)) return ActionResult.route(town);
         return ActionResult.none();
     }
@@ -217,29 +229,67 @@ public final class TownInfoOverlay {
         return s.replaceAll("§.", "");
     }
 
-    private static void drawButtons(DrawContext ctx, TextRenderer tr, int bx, int by, int boxW, boolean favorite) {
+    private static void drawFavoriteStar(DrawContext ctx, TextRenderer tr, int bx, int by, int boxW, boolean favorite) {
+        favoriteX1 = bx + boxW - PADDING - STAR_HITBOX + 2;
+        favoriteY1 = by + PADDING - 4;
+        favoriteX2 = favoriteX1 + STAR_HITBOX;
+        favoriteY2 = favoriteY1 + STAR_HITBOX;
+
+        String star = favorite ? "★" : "☆";
+        int color = favorite ? 0xFFFFE066 : 0xFFE5E7EB;
+        int textX = favoriteX1 + (STAR_HITBOX - tr.getWidth(star)) / 2;
+        int textY = favoriteY1 + 4;
+        ctx.drawText(tr, star, textX + 1, textY + 1, 0xCC000000, false);
+        ctx.drawText(tr, star, textX, textY, color, false);
+    }
+
+    private static void drawButtons(DrawContext ctx, TextRenderer tr, int bx, int by, int boxW) {
         int gap = 6;
         int available = boxW - PADDING * 2;
         int buttonW = Math.max(52, Math.min(82, (available - gap) / 2));
-        favoriteX1 = bx + PADDING;
-        favoriteY1 = by;
-        favoriteX2 = favoriteX1 + buttonW;
-        favoriteY2 = by + BUTTON_HEIGHT;
-        routeX1 = favoriteX2 + gap;
+        discordX1 = bx + PADDING;
+        discordY1 = by;
+        discordX2 = discordX1 + buttonW;
+        discordY2 = by + BUTTON_HEIGHT;
+        routeX1 = discordX2 + gap;
         routeY1 = by;
         routeX2 = routeX1 + buttonW;
         routeY2 = by + BUTTON_HEIGHT;
         hasButtons = true;
 
-        drawButton(ctx, tr, favoriteX1, favoriteY1, favoriteX2, favoriteY2, favorite ? "Unstar" : "Star");
-        drawButton(ctx, tr, routeX1, routeY1, routeX2, routeY2, "Route");
+        boolean hasDiscord = !normalizeDiscordUrl(currentData.discord()).isBlank();
+        drawButton(ctx, tr, discordX1, discordY1, discordX2, discordY2, "Discord", hasDiscord);
+        drawButton(ctx, tr, routeX1, routeY1, routeX2, routeY2, "Route", true);
     }
 
-    private static void drawButton(DrawContext ctx, TextRenderer tr, int x1, int y1, int x2, int y2, String label) {
-        ButtonWidget button = ButtonWidget.builder(coloredText(label, 0xFFFFFF), ignored -> {})
+    private static void drawButton(DrawContext ctx, TextRenderer tr, int x1, int y1, int x2, int y2,
+                                   String label, boolean active) {
+        ButtonWidget button = ButtonWidget.builder(coloredText(label, active ? 0xFFFFFF : 0x777777), ignored -> {})
                 .dimensions(x1, y1, x2 - x1, y2 - y1)
                 .build();
+        button.active = active;
         button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+    }
+
+    private static String normalizeDiscordUrl(String discord) {
+        if (discord == null || discord.isBlank()) return "";
+        String value = discord.trim();
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) return value;
+        if (lower.startsWith("discord.gg/") || lower.startsWith("discord.com/")
+                || lower.startsWith("www.discord.gg/") || lower.startsWith("www.discord.com/")) {
+            return "https://" + value;
+        }
+        if (!value.contains("/") && !value.contains(".")) return "https://discord.gg/" + value;
+        return "https://" + value;
+    }
+
+    public static void openDiscord(String url) {
+        if (url == null || url.isBlank()) return;
+        try {
+            Util.getOperatingSystem().open(URI.create(url));
+        } catch (Exception ignored) {
+        }
     }
 
     private static Text coloredText(String label, int textColor) {
@@ -260,21 +310,25 @@ public final class TownInfoOverlay {
         return mouseX >= x1 && mouseX <= x2 && mouseY >= y1 && mouseY <= y2;
     }
 
-    public record ActionResult(Action action, String townName) {
+    public record ActionResult(Action action, String townName, String url) {
         public static ActionResult none() {
-            return new ActionResult(Action.NONE, "");
+            return new ActionResult(Action.NONE, "", "");
         }
         public static ActionResult favorite(String townName) {
-            return new ActionResult(Action.FAVORITE, townName);
+            return new ActionResult(Action.FAVORITE, townName, "");
+        }
+        public static ActionResult discord(String townName, String url) {
+            return new ActionResult(Action.DISCORD, townName, url);
         }
         public static ActionResult route(String townName) {
-            return new ActionResult(Action.ROUTE, townName);
+            return new ActionResult(Action.ROUTE, townName, "");
         }
     }
 
     public enum Action {
         NONE,
         FAVORITE,
+        DISCORD,
         ROUTE
     }
 }

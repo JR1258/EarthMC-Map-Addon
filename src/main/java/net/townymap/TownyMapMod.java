@@ -892,6 +892,8 @@ public class TownyMapMod implements ClientModInitializer {
         TownInfoOverlay.ActionResult result = TownInfoOverlay.handleClick(mouseX, mouseY);
         if (result.action() == TownInfoOverlay.Action.FAVORITE) {
             toggleFavorite(result.townName());
+        } else if (result.action() == TownInfoOverlay.Action.DISCORD) {
+            TownInfoOverlay.openDiscord(result.url());
         } else if (result.action() == TownInfoOverlay.Action.ROUTE) {
             createXaeroRoute(townInfoRouteTarget);
         }

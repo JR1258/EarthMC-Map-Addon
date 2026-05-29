@@ -53,6 +53,9 @@ public final class TownSearchOverlay {
     private static int cachedNationCount = -1;
     private static int cachedNationDetailCount = -1;
     private static List<Result> cachedResults = List.of();
+    private static int infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH;
+    private static boolean infoDiscordVisible;
+    private static String infoDiscordUrl = "";
 
     private TownSearchOverlay() {}
 
@@ -109,6 +112,10 @@ public final class TownSearchOverlay {
         int y = top();
         ClickResult favoriteClick = favoriteClick(mouseX, mouseY, favoritesX(x), y, towns, favoriteTowns);
         if (favoriteClick.consumed()) return favoriteClick;
+        if (infoDiscordVisible && inside(mouseX, mouseY, infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH)) {
+            TownInfoOverlay.openDiscord(infoDiscordUrl);
+            return ClickResult.consumedResult();
+        }
 
         if (inside(mouseX, mouseY, x, y, WIDTH, ROW_HEIGHT)) {
             focused = true;
@@ -471,6 +478,8 @@ public final class TownSearchOverlay {
     private static void clearSelection() {
         selectedType = "";
         selectedName = "";
+        infoDiscordVisible = false;
+        infoDiscordUrl = "";
     }
 
     private static void renderSelectedInfo(DrawContext ctx, TextRenderer tr, int sw, int sh,
@@ -479,10 +488,19 @@ public final class TownSearchOverlay {
                                            Map<String, EarthMcPlayerData> playerDetails,
                                            Map<String, PlayerHistoryEntry> playerHistory,
                                            Map<String, EarthMcNationData> nationDetails) {
+        infoDiscordVisible = false;
+        infoDiscordUrl = "";
         if (selectedName.isBlank()) return;
         List<String> lines = selectedInfo(towns, players, townDetails, playerDetails,
                 playerHistory, nationDetails);
         if (lines.isEmpty()) return;
+        EarthMcNationData selectedNationDetails = "nation".equals(selectedType)
+                ? nationDetails.get(selectedName.toLowerCase(Locale.ROOT))
+                : null;
+        String nationDiscordUrl = selectedNationDetails == null
+                ? ""
+                : normalizeDiscordUrl(selectedNationDetails.discord());
+        boolean showDiscordButton = !nationDiscordUrl.isBlank();
         if (lines.size() > MAX_INFO_LINES) {
             lines = new ArrayList<>(lines.subList(0, MAX_INFO_LINES));
         }
@@ -490,7 +508,8 @@ public final class TownSearchOverlay {
         int maxW = 0;
         for (String line : lines) maxW = Math.max(maxW, tr.getWidth(line));
         int boxW = Math.min(Math.max(WIDTH, maxW + 16), Math.max(WIDTH, sw - 24));
-        int boxH = lines.size() * 12 + 14;
+        int buttonRowHeight = showDiscordButton ? ROW_HEIGHT + 7 : 0;
+        int boxH = lines.size() * 12 + 14 + buttonRowHeight;
         int x = Math.max(8, sw - boxW - 12);
         int y = Math.max(36, Math.min(sh - boxH - 36, sh / 2 - boxH / 2));
 
@@ -501,6 +520,18 @@ public final class TownSearchOverlay {
         for (String line : lines) {
             ctx.drawText(tr, trimToWidth(tr, line, boxW - 14), x + 7, ty, 0xFFFFFFFF, true);
             ty += 12;
+        }
+        if (showDiscordButton) {
+            infoDiscordX = x + 7;
+            infoDiscordY = y + boxH - ROW_HEIGHT - 7;
+            infoDiscordW = Math.min(82, boxW - 14);
+            infoDiscordH = ROW_HEIGHT;
+            infoDiscordVisible = true;
+            infoDiscordUrl = nationDiscordUrl;
+            ButtonWidget button = ButtonWidget.builder(coloredText("Discord", 0xFFFFFF), ignored -> {})
+                    .dimensions(infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH)
+                    .build();
+            button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
         }
     }
 
@@ -600,6 +631,19 @@ public final class TownSearchOverlay {
 
     private static String formatGold(double gold) {
         return Long.toString(Math.round(gold));
+    }
+
+    private static String normalizeDiscordUrl(String discord) {
+        if (discord == null || discord.isBlank()) return "";
+        String value = discord.trim();
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) return value;
+        if (lower.startsWith("discord.gg/") || lower.startsWith("discord.com/")
+                || lower.startsWith("www.discord.gg/") || lower.startsWith("www.discord.com/")) {
+            return "https://" + value;
+        }
+        if (!value.contains("/") && !value.contains(".")) return "https://discord.gg/" + value;
+        return "https://" + value;
     }
 
     private static int nationBonus(int residents) {

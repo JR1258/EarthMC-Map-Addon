@@ -338,6 +338,7 @@ public class EarthMcApiClient {
     private EarthMcNationData parseNation(JsonObject n) {
         String name = str(n, "name", "?");
         String uuid = str(n, "uuid", "");
+        String discord = str(n, "discord", "");
         String board = str(n, "board", "");
         String king = objectName(n, "king");
         String capital = objectName(n, "capital");
@@ -396,7 +397,7 @@ public class EarthMcApiClient {
             }
         }
 
-        return new EarthMcNationData(name, uuid, board, king, capital, founded, towns, residents, chunks,
+        return new EarthMcNationData(name, uuid, discord, board, king, capital, founded, towns, residents, chunks,
                 outlaws, allies, enemies, balance, isPublic, isOpen, isNeutral, hasSpawn, spawnX, spawnZ);
     }
 

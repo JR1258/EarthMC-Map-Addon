@@ -3,6 +3,7 @@ package net.townymap.model;
 public record EarthMcNationData(
         String name,
         String uuid,
+        String discord,
         String board,
         String kingName,
         String capitalName,
@@ -22,7 +23,7 @@ public record EarthMcNationData(
         int spawnZ
 ) {
     public EarthMcNationData(String name, String uuid) {
-        this(name, uuid, "", "", "", "", 0, 0, 0, 0, 0, 0, 0,
+        this(name, uuid, "", "", "", "", "", 0, 0, 0, 0, 0, 0, 0,
                 false, false, false, false, 0, 0);
     }
 }

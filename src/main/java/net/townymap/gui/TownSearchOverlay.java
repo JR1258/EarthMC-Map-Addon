@@ -473,6 +473,7 @@ public final class TownSearchOverlay {
     private static void select(Result result) {
         selectedType = result.type();
         selectedName = result.name();
+        TownInfoOverlay.dismiss();
     }
 
     private static void clearSelection() {
@@ -494,13 +495,8 @@ public final class TownSearchOverlay {
         List<String> lines = selectedInfo(towns, players, townDetails, playerDetails,
                 playerHistory, nationDetails);
         if (lines.isEmpty()) return;
-        EarthMcNationData selectedNationDetails = "nation".equals(selectedType)
-                ? nationDetails.get(selectedName.toLowerCase(Locale.ROOT))
-                : null;
-        String nationDiscordUrl = selectedNationDetails == null
-                ? ""
-                : normalizeDiscordUrl(selectedNationDetails.discord());
-        boolean showDiscordButton = !nationDiscordUrl.isBlank();
+        String discordUrl = selectedDiscordUrl(townDetails, nationDetails);
+        boolean showDiscordButton = !discordUrl.isBlank();
         if (lines.size() > MAX_INFO_LINES) {
             lines = new ArrayList<>(lines.subList(0, MAX_INFO_LINES));
         }
@@ -527,12 +523,26 @@ public final class TownSearchOverlay {
             infoDiscordW = Math.min(82, boxW - 14);
             infoDiscordH = ROW_HEIGHT;
             infoDiscordVisible = true;
-            infoDiscordUrl = nationDiscordUrl;
+            infoDiscordUrl = discordUrl;
             ButtonWidget button = ButtonWidget.builder(coloredText("Discord", 0xFFFFFF), ignored -> {})
                     .dimensions(infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH)
                     .build();
             button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
         }
+    }
+
+    private static String selectedDiscordUrl(Map<String, TownPopupData> townDetails,
+                                             Map<String, EarthMcNationData> nationDetails) {
+        String key = selectedName.toLowerCase(Locale.ROOT);
+        if ("town".equals(selectedType)) {
+            TownPopupData details = townDetails.get(key);
+            return details == null ? "" : normalizeDiscordUrl(details.discord());
+        }
+        if ("nation".equals(selectedType)) {
+            EarthMcNationData details = nationDetails.get(key);
+            return details == null ? "" : normalizeDiscordUrl(details.discord());
+        }
+        return "";
     }
 
     private static List<String> selectedInfo(List<TownData> towns, List<PlayerMarker> players,

@@ -5,7 +5,7 @@ plugins {
 
 version = project.mod_version
 group   = project.maven_group
-base { archivesName = project.archives_base_name }
+base { archivesName = "${project.archives_base_name}-${project.minecraft_version}" }
 
 repositories {
     maven { url 'https://maven.fabricmc.net/' }

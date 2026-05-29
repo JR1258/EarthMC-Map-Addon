@@ -1,0 +1,139 @@
+name: Publish to Modrinth
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "GitHub release tag to publish, for example v1.0.1"
+        required: true
+      version_type:
+        description: "Modrinth version type"
+        required: true
+        default: "release"
+        type: choice
+        options:
+          - release
+          - beta
+          - alpha
+      changelog:
+        description: "Optional changelog override. If blank, the GitHub release notes are used."
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      GAME_VERSION: "1.21.11"
+      LOADER: "fabric"
+      MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      VERSION_TYPE: ${{ inputs.version_type || 'release' }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MODRINTH_TOKEN}" ]]; then
+            echo "MODRINTH_TOKEN secret is not set." >&2
+            exit 1
+          fi
+          if [[ -z "${MODRINTH_PROJECT_ID}" ]]; then
+            echo "MODRINTH_PROJECT_ID repository variable is not set." >&2
+            exit 1
+          fi
+
+          if [[ "${EVENT_NAME}" == "release" ]]; then
+            tag="${RELEASE_TAG}"
+            name="${RELEASE_NAME:-EarthMC Map Addon ${RELEASE_TAG}}"
+            changelog="${RELEASE_BODY}"
+          else
+            tag="${INPUT_TAG}"
+            name="EarthMC Map Addon ${INPUT_TAG#v}"
+            changelog="${INPUT_CHANGELOG}"
+            if [[ -z "${changelog}" ]]; then
+              changelog="$(gh release view "${tag}" --json body --jq .body)"
+            fi
+          fi
+
+          if [[ -z "${tag}" ]]; then
+            echo "No release tag was provided." >&2
+            exit 1
+          fi
+
+          printf '%s' "${changelog}" > changelog.md
+
+          {
+            echo "tag=${tag}"
+            echo "version_number=${tag#v}"
+            echo "name=${name}"
+            echo "changelog_path=changelog.md"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Download release jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${{ steps.meta.outputs.tag }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "*.jar" \
+            --clobber \
+            --dir dist
+
+          jar="$(find dist -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | sort | head -n 1)"
+          if [[ -z "${jar}" ]]; then
+            echo "No publishable jar found in GitHub release assets." >&2
+            exit 1
+          fi
+          echo "JAR_PATH=${jar}" >> "${GITHUB_ENV}"
+
+      - name: Publish version
+        shell: bash
+        run: |
+          set -euo pipefail
+          changelog="$(cat "${{ steps.meta.outputs.changelog_path }}")"
+
+          jq -n \
+            --arg name "${{ steps.meta.outputs.name }}" \
+            --arg version_number "${{ steps.meta.outputs.version_number }}" \
+            --arg changelog "${changelog}" \
+            --arg project_id "${MODRINTH_PROJECT_ID}" \
+            --arg game_version "${GAME_VERSION}" \
+            --arg loader "${LOADER}" \
+            --arg version_type "${VERSION_TYPE}" \
+            '{
+              name: $name,
+              version_number: $version_number,
+              changelog: $changelog,
+              dependencies: [],
+              game_versions: [$game_version],
+              version_type: $version_type,
+              loaders: [$loader],
+              featured: true,
+              project_id: $project_id,
+              file_parts: ["file"],
+              primary_file: "file"
+            }' > modrinth-data.json
+
+          curl --fail-with-body \
+            -X POST "https://api.modrinth.com/v2/version" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: JR1258/EarthMC-Map-Addon GitHub Actions" \
+            -F "data=@modrinth-data.json;type=application/json" \
+            -F "file=@${JAR_PATH};type=application/java-archive"

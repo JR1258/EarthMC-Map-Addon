@@ -75,7 +75,7 @@ jar {
 
 // Automatically deploy the remapped JAR to the Modrinth launcher profile after build.
 def modsDir = file(new File(System.getProperty("user.home"), "Library/Application Support/ModrinthApp/profiles/1.21.11/mods"))
-def oldModJarPrefixes = ['towny-map-addon', 'EarthMC Map Addon']
+def oldModJarPrefixes = ['towny-map-addon', 'EarthMC Map Addon', 'EarthMC.Map.Addon', 'earthmc-map-addon']
 
 tasks.register('deployToMods', Copy) {
     dependsOn remapJar

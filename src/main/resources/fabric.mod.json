@@ -28,5 +28,10 @@
     "xaeroworldmap": "*",
     "xaerosminimap": "*",
     "modmenu":       "*"
+  },
+  "custom": {
+    "modmenu": {
+      "update_checker": true
+    }
   }
 }

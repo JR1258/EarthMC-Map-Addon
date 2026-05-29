@@ -103,11 +103,9 @@ public final class TownInfoOverlay {
         int buttonRowHeight = showButtons ? BUTTON_HEIGHT + 6 : 0;
         int boxH = lines.size() * LINE_HEIGHT + PADDING * 2 - 1 + buttonRowHeight;
 
-        // Position — clamp to screen
-        int bx = Math.min(screenX + 6, sw - boxW - 4);
-        int by = Math.min(screenY + 6, sh - boxH - 4);
-        if (bx < 4) bx = 4;
-        if (by < 4) by = 4;
+        // Keep right-click town details in the same right-side area as search result details.
+        int bx = Math.max(8, sw - boxW - 12);
+        int by = Math.max(36, Math.min(sh - boxH - 36, sh / 2 - boxH / 2));
 
         // Background + border
         ctx.fill(bx - 1, by - 1, bx + boxW + 1, by + boxH + 1, BORDER_COLOR);

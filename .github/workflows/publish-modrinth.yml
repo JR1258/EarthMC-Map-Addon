@@ -1,12 +1,10 @@
 name: Publish to Modrinth
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "GitHub release tag to publish, for example v1.0.1"
+        description: "GitHub release tag to publish to Modrinth, for example v1.0.1"
         required: true
       version_type:
         description: "Modrinth version type"
@@ -40,10 +38,6 @@ jobs:
         id: meta
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_NAME: ${{ github.event.release.name }}
-          RELEASE_BODY: ${{ github.event.release.body }}
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_CHANGELOG: ${{ inputs.changelog }}
         run: |
@@ -58,17 +52,11 @@ jobs:
             exit 1
           fi
 
-          if [[ "${EVENT_NAME}" == "release" ]]; then
-            tag="${RELEASE_TAG}"
-            name="${RELEASE_NAME:-EarthMC Map Addon ${RELEASE_TAG}}"
-            changelog="${RELEASE_BODY}"
-          else
-            tag="${INPUT_TAG}"
-            name="EarthMC Map Addon ${INPUT_TAG#v}"
-            changelog="${INPUT_CHANGELOG}"
-            if [[ -z "${changelog}" ]]; then
-              changelog="$(gh release view "${tag}" --json body --jq .body)"
-            fi
+          tag="${INPUT_TAG}"
+          name="EarthMC Map Addon ${INPUT_TAG#v}"
+          changelog="${INPUT_CHANGELOG}"
+          if [[ -z "${changelog}" ]]; then
+            changelog="$(gh release view "${tag}" --json body --jq .body)"
           fi
 
           if [[ -z "${tag}" ]]; then

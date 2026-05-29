@@ -1,0 +1,50 @@
+name: Update Modrinth Icon
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-icon:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      ICON_PATH: src/main/resources/assets/townymapaddon/icon.png
+      MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload project icon
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MODRINTH_TOKEN}" ]]; then
+            echo "MODRINTH_TOKEN secret is not set." >&2
+            exit 1
+          fi
+          if [[ -z "${MODRINTH_PROJECT_ID}" ]]; then
+            echo "MODRINTH_PROJECT_ID repository variable is not set." >&2
+            exit 1
+          fi
+          if [[ ! -f "${ICON_PATH}" ]]; then
+            echo "Icon file not found: ${ICON_PATH}" >&2
+            exit 1
+          fi
+
+          icon_size="$(wc -c < "${ICON_PATH}")"
+          if (( icon_size > 262144 )); then
+            echo "Icon is ${icon_size} bytes, but Modrinth allows at most 262144 bytes." >&2
+            exit 1
+          fi
+
+          curl --fail-with-body \
+            -X PATCH "https://api.modrinth.com/v2/project/${MODRINTH_PROJECT_ID}/icon?ext=png" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: JR1258/EarthMC-Map-Addon GitHub Actions" \
+            -H "Content-Type: image/png" \
+            --data-binary "@${ICON_PATH}"

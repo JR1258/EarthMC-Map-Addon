@@ -34,13 +34,21 @@ jobs:
 
     env:
       GAME_VERSION: ${{ inputs.game_version || '1.21.11' }}
+      ICON_PATH: src/main/resources/assets/townymapaddon/icon.png
       LOADER: "fabric"
       MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
       MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      PROJECT_DESCRIPTION: "Xaero's minimap extension that is built for EarthMC."
+      PROJECT_ISSUES_URL: "https://github.com/JR1258/EarthMC-Map-Addon/issues"
+      PROJECT_SOURCE_URL: "https://github.com/JR1258/EarthMC-Map-Addon"
+      PROJECT_TITLE: "EarthMC Map Addon"
       VERSION_TYPE: ${{ inputs.version_type || 'release' }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
+      - name: Checkout metadata assets
+        uses: actions/checkout@v4
+
       - name: Resolve release metadata
         id: meta
         shell: bash
@@ -81,6 +89,56 @@ jobs:
             echo "name=${name}"
             echo "changelog_path=changelog.md"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Sync Modrinth project metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg title "${PROJECT_TITLE}" \
+            --arg description "${PROJECT_DESCRIPTION}" \
+            --arg source_url "${PROJECT_SOURCE_URL}" \
+            --arg issues_url "${PROJECT_ISSUES_URL}" \
+            '{
+              title: $title,
+              description: $description,
+              client_side: "required",
+              server_side: "unsupported",
+              categories: ["game-mechanics", "utility"],
+              source_url: $source_url,
+              issues_url: $issues_url
+            }' > modrinth-project-data.json
+
+          curl --fail-with-body \
+            -X PATCH "https://api.modrinth.com/v2/project/${MODRINTH_PROJECT_ID}" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: JR1258/EarthMC-Map-Addon GitHub Actions" \
+            -H "Content-Type: application/json" \
+            --data-binary "@modrinth-project-data.json"
+
+      - name: Sync Modrinth project icon
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "${ICON_PATH}" ]]; then
+            echo "Icon file not found: ${ICON_PATH}" >&2
+            exit 1
+          fi
+
+          icon_size="$(wc -c < "${ICON_PATH}")"
+          if (( icon_size > 262144 )); then
+            echo "Icon is ${icon_size} bytes, but Modrinth allows at most 262144 bytes." >&2
+            exit 1
+          fi
+
+          curl --fail-with-body \
+            -X PATCH "https://api.modrinth.com/v2/project/${MODRINTH_PROJECT_ID}/icon?ext=png" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: JR1258/EarthMC-Map-Addon GitHub Actions" \
+            -H "Content-Type: image/png" \
+            --data-binary "@${ICON_PATH}"
 
       - name: Download release jar
         shell: bash

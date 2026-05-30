@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'net.fabricmc.fabric-loom' version '1.16-SNAPSHOT'
     id 'maven-publish'
 }
 
@@ -16,17 +16,19 @@ repositories {
 
 dependencies {
     minecraft        "com.mojang:minecraft:${project.minecraft_version}"
-    // Minecraft 26.x has no Fabric yarn mappings, so this target uses the
-    // official Mojang mappings (the MC API is referenced by Mojmap names here).
-    mappings         loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // MC 26.x ships unobfuscated (Mojang no longer publishes obfuscation maps and
+    // there is no yarn for 26.x), so Loom 1.16 reads names from the jar directly —
+    // no `mappings` dependency is declared.
+    // Loom 1.16 dropped the mod* remapping configs (unobfuscated 26.x needs no
+    // remap), so these are plain Gradle configurations.
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Optional: ModMenu for in-game config screen. Adjust version to match your MC version.
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 
     // Compile-only: users must have Xaero's mods installed at runtime.
-    modCompileOnly fileTree(dir: 'libs', include: ['*.jar'])
+    compileOnly fileTree(dir: 'libs', include: ['*.jar'])
 }
 
 processResources {
@@ -80,8 +82,10 @@ def modsDir = file(new File(System.getProperty("user.home"), "Library/Applicatio
 def oldModJarPrefixes = ['towny-map-addon', 'EarthMC Map Addon', 'EarthMC.Map.Addon', 'earthmc-map-addon']
 
 tasks.register('deployToMods', Copy) {
-    dependsOn remapJar
-    from(remapJar.archiveFile)
+    // Loom 1.16 produces the final mod jar via the `jar` task (no remap step on
+    // unobfuscated 26.x), so deploy from `jar` rather than `remapJar`.
+    dependsOn jar
+    from(jar.archiveFile)
     into(modsDir)
     // Remove any older version of this mod so there are no duplicates
     doFirst {
@@ -90,7 +94,7 @@ tasks.register('deployToMods', Copy) {
         }
     }
     doLast {
-        println "Deployed ${remapJar.archiveFileName.get()} → ${modsDir}"
+        println "Deployed ${jar.archiveFileName.get()} → ${modsDir}"
     }
 }
 

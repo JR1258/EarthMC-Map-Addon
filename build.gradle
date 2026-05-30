@@ -16,7 +16,9 @@ repositories {
 
 dependencies {
     minecraft        "com.mojang:minecraft:${project.minecraft_version}"
-    mappings         "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    // Minecraft 26.x has no Fabric yarn mappings, so this target uses the
+    // official Mojang mappings (the MC API is referenced by Mojmap names here).
+    mappings         loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
@@ -62,8 +64,8 @@ tasks.register('prebuildBorderTiles', JavaExec) {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
     withSourcesJar()
 }
 
@@ -74,7 +76,7 @@ jar {
 }
 
 // Automatically deploy the remapped JAR to the Modrinth launcher profile after build.
-def modsDir = file(new File(System.getProperty("user.home"), "Library/Application Support/ModrinthApp/profiles/1.21.11/mods"))
+def modsDir = file(new File(System.getProperty("user.home"), "Library/Application Support/ModrinthApp/profiles/26.1.2/mods"))
 def oldModJarPrefixes = ['towny-map-addon', 'EarthMC Map Addon', 'EarthMC.Map.Addon', 'earthmc-map-addon']
 
 tasks.register('deployToMods', Copy) {

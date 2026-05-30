@@ -270,7 +270,7 @@ public class SquaremapApiClient {
                     .timeout(Duration.ofSeconds(20))
                     .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
                     .GET()
-                    .build();
+                .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) return resp.body();
             LOGGER.warn("[TownyMap] HTTP {} from {}", resp.statusCode(), url);

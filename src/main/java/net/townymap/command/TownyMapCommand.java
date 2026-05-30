@@ -1,10 +1,10 @@
 package net.townymap.command;
 
 import com.mojang.brigadier.arguments.BoolArgumentType;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 
@@ -15,21 +15,21 @@ public final class TownyMapCommand {
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(
-                ClientCommandManager.literal("townymap")
+                ClientCommands.literal("townymap")
                     .then(toggle("towns", "Town borders",
                         val -> { TownyMapMod.getConfig().townsEnabled   = val; }))
                     .then(toggle("players", "Online players",
                         val -> { TownyMapMod.getConfig().playersEnabled = val; }))
                     .then(toggle("squaremap-background", "Squaremap background",
                         val -> { TownyMapMod.getConfig().squaremapBackgroundEnabled = val; }))
-                    .then(ClientCommandManager.literal("refresh")
+                    .then(ClientCommands.literal("refresh")
                         .executes(ctx -> {
                             TownyMapMod.forceRefreshTownClaims();
                             ctx.getSource().sendFeedback(
-                                Text.literal("[TownyMap] ")
-                                    .formatted(Formatting.GOLD)
-                                    .append(Text.literal("Refreshing towns and claims from squaremap...")
-                                        .formatted(Formatting.WHITE))
+                                Component.literal("[TownyMap] ")
+                                    .withStyle(ChatFormatting.GOLD)
+                                    .append(Component.literal("Refreshing towns and claims from squaremap...")
+                                        .withStyle(ChatFormatting.WHITE))
                             );
                             return 1;
                         }))
@@ -41,19 +41,19 @@ public final class TownyMapCommand {
             net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> toggle(
             String name, String label, java.util.function.Consumer<Boolean> setter) {
 
-        return ClientCommandManager.literal(name)
-                .then(ClientCommandManager.argument("value", BoolArgumentType.bool())
+        return ClientCommands.literal(name)
+                .then(ClientCommands.argument("value", BoolArgumentType.bool())
                     .executes(ctx -> {
                         boolean val = BoolArgumentType.getBool(ctx, "value");
                         setter.accept(val);
                         TownyMapMod.getConfig().save();
                         ctx.getSource().sendFeedback(
-                            Text.literal("[TownyMap] ")
-                                .formatted(Formatting.GOLD)
-                                .append(Text.literal(label + ": ")
-                                    .formatted(Formatting.WHITE))
-                                .append(Text.literal(val ? "enabled" : "disabled")
-                                    .formatted(val ? Formatting.GREEN : Formatting.RED))
+                            Component.literal("[TownyMap] ")
+                                .withStyle(ChatFormatting.GOLD)
+                                .append(Component.literal(label + ": ")
+                                    .withStyle(ChatFormatting.WHITE))
+                                .append(Component.literal(val ? "enabled" : "disabled")
+                                    .withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED))
                         );
                         return 1;
                     }));

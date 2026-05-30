@@ -1,6 +1,6 @@
 package net.townymap.mixin;
 
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.TownyMapMod;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,14 +15,14 @@ import xaero.hud.render.module.ModuleRenderContext;
 public class MixinMinimapModuleRenderer {
 
     @Inject(
-            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/class_332;F)V",
+            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/client/gui/GuiGraphicsExtractor;F)V",
             at = @At("HEAD"),
             cancellable = true,
             remap = false
     )
     private void townymapaddon$hideMinimapInNether(MinimapSession session,
                                                    ModuleRenderContext renderContext,
-                                                   DrawContext drawContext,
+                                                   GuiGraphicsExtractor drawContext,
                                                    float tickDelta,
                                                    CallbackInfo ci) {
         if (TownyMapMod.shouldHideMinimap()) {
@@ -34,23 +34,23 @@ public class MixinMinimapModuleRenderer {
     }
 
     @Inject(
-            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/class_332;F)V",
+            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/client/gui/GuiGraphicsExtractor;F)V",
             at = @At("RETURN"),
             remap = false
     )
     private void townymapaddon$clearNativeCompassSuppression(MinimapSession session,
                                                             ModuleRenderContext renderContext,
-                                                            DrawContext drawContext,
+                                                            GuiGraphicsExtractor drawContext,
                                                             float tickDelta,
                                                             CallbackInfo ci) {
         TownyMapMod.clearSuppressNativeMinimapCompass();
     }
 
     @Redirect(
-            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/class_332;F)V",
+            method = "render(Lxaero/hud/minimap/module/MinimapSession;Lxaero/hud/render/module/ModuleRenderContext;Lnet/minecraft/client/gui/GuiGraphicsExtractor;F)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lxaero/common/minimap/render/MinimapRenderer;renderOutsidePip(Lxaero/hud/minimap/module/MinimapSession;IIIIDFIFLnet/minecraft/class_332;)V"
+                    target = "Lxaero/common/minimap/render/MinimapRenderer;renderOutsidePip(Lxaero/hud/minimap/module/MinimapSession;IIIIDFIFLnet/minecraft/client/gui/GuiGraphicsExtractor;)V"
             ),
             remap = false
     )
@@ -59,10 +59,10 @@ public class MixinMinimapModuleRenderer {
                                                   int x, int y, int screenW, int screenH,
                                                   double screenScale, float minimapScale,
                                                   int configuredWidth, float tickDelta,
-                                                  DrawContext drawContext,
+                                                  GuiGraphicsExtractor drawContext,
                                                   MinimapSession originalSession,
                                                   ModuleRenderContext renderContext,
-                                                  DrawContext originalDrawContext,
+                                                  GuiGraphicsExtractor originalDrawContext,
                                                   float originalTickDelta) {
         MinimapBounds bounds = actualMinimapBounds(session, x, y, screenScale, minimapScale,
                 renderContext, configuredWidth);

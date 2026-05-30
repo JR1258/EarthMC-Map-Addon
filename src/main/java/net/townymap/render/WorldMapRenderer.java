@@ -1,7 +1,7 @@
 package net.townymap.render;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 import net.townymap.api.SquaremapApiClient;
@@ -91,7 +91,7 @@ public class WorldMapRenderer {
         townCacheRequestedSource = List.of();
     }
 
-    public void render(DrawContext ctx,
+    public void render(GuiGraphicsExtractor ctx,
                        double cameraX, double cameraZ, double blockScale,
                        int sw, int sh,
                        Map<String, TownPopupData> townDetails,
@@ -122,7 +122,7 @@ public class WorldMapRenderer {
         if (config.playersEnabled) renderPlayers(ctx, cameraX, cameraZ, blockScale, sw, sh, playerDetails);
     }
 
-    public void renderSquaremapBackground(DrawContext ctx,
+    public void renderSquaremapBackground(GuiGraphicsExtractor ctx,
                                           double cameraX, double cameraZ, double blockScale,
                                           int sw, int sh, boolean moving) {
         if (!config.squaremapBackgroundEnabled || blockScale <= 0) return;
@@ -138,7 +138,7 @@ public class WorldMapRenderer {
         ctx.fill(0, 0, sw, sh, 0x38000000);
     }
 
-    public void renderSquaremapViewport(DrawContext ctx,
+    public void renderSquaremapViewport(GuiGraphicsExtractor ctx,
                                         double cameraX, double cameraZ, double blockScale,
                                         int sw, int sh, boolean moving) {
         if (!config.squaremapBackgroundEnabled || blockScale <= 0 || sw <= 0 || sh <= 0) return;
@@ -152,7 +152,7 @@ public class WorldMapRenderer {
                 worldLeft, worldRight, worldTop, worldBottom, moving);
     }
 
-    public void renderSquaremapMinimapViewport(DrawContext ctx,
+    public void renderSquaremapMinimapViewport(GuiGraphicsExtractor ctx,
                                                double cameraX, double cameraZ, double blockScale,
                                                int sw, int sh, boolean moving) {
         if (!config.squaremapBackgroundEnabled || blockScale <= 0 || sw <= 0 || sh <= 0) return;
@@ -174,7 +174,7 @@ public class WorldMapRenderer {
         return borderOverlay.isLoading();
     }
 
-    public void renderHoveredChunk(DrawContext ctx,
+    public void renderHoveredChunk(GuiGraphicsExtractor ctx,
                                    double cameraX, double cameraZ, double blockScale,
                                    int sw, int sh,
                                    double mouseWorldX, double mouseWorldZ) {
@@ -220,7 +220,7 @@ public class WorldMapRenderer {
 
     // ── Town rendering ───────────────────────────────────────────────────────
 
-    private void renderChunkGrid(DrawContext ctx,
+    private void renderChunkGrid(GuiGraphicsExtractor ctx,
                                  double cameraX, double cameraZ, double blockScale,
                                  int sw, int sh,
                                  double worldLeft, double worldRight,
@@ -249,7 +249,7 @@ public class WorldMapRenderer {
         return (int) Math.floor(worldCoord / CHUNK_SIZE);
     }
 
-    private void renderOptimisticClaimChunks(DrawContext ctx,
+    private void renderOptimisticClaimChunks(GuiGraphicsExtractor ctx,
                                              double cameraX, double cameraZ, double blockScale,
                                              int sw, int sh,
                                              double worldLeft, double worldRight,
@@ -278,7 +278,7 @@ public class WorldMapRenderer {
         }
     }
 
-    private void renderTowns(DrawContext ctx,
+    private void renderTowns(GuiGraphicsExtractor ctx,
                              double cameraX, double cameraZ, double blockScale,
                              int sw, int sh,
                              List<RenderTown> visibleTowns,
@@ -329,7 +329,7 @@ public class WorldMapRenderer {
     // a 4-call bounding-box outline so the town is always visible.  This fallback
     // fires rarely and costs at most 4 draw calls when it does.
 
-    private void renderRing(DrawContext ctx, RingGeometry ring,
+    private void renderRing(GuiGraphicsExtractor ctx, RingGeometry ring,
                             int borderColor, int fillColor,
                             double cameraX, double cameraZ, double blockScale,
                             int sw, int sh) {
@@ -387,15 +387,15 @@ public class WorldMapRenderer {
                              || (prevY < 0 && cy < 0) || (prevY > sh && cy > sh);
             if (!offscreen) {
                 if (prevY == cy) {
-                    if (prevX != cx) ctx.drawHorizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), cy, borderColor);
+                    if (prevX != cx) ctx.horizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), cy, borderColor);
                     else ctx.fill(cx, cy, cx + 1, cy + 1, borderColor);   // 1px corner dot
                 } else if (prevX == cx) {
-                    ctx.drawVerticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
+                    ctx.verticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
                 } else {
                     // Defensive (Towny data is axis-aligned, so this is unreachable):
                     // draw an L-bend to keep the loop connected without a diagonal.
-                    ctx.drawHorizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), prevY, borderColor);
-                    ctx.drawVerticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
+                    ctx.horizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), prevY, borderColor);
+                    ctx.verticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
                 }
             }
             prevX = cx;
@@ -412,7 +412,7 @@ public class WorldMapRenderer {
     }
 
     /** Draws the four sides of the screen bounding box — always visible, 4 calls. */
-    private static void renderBoundingBoxBorder(DrawContext ctx,
+    private static void renderBoundingBoxBorder(GuiGraphicsExtractor ctx,
                                                 int x1, int y1, int x2, int y2,
                                                 int color, int sw, int sh) {
         int bx1 = Math.max(-1, Math.min(x1, x2));
@@ -420,13 +420,13 @@ public class WorldMapRenderer {
         int by1 = Math.max(-1, Math.min(y1, y2));
         int by2 = Math.min(sh,  Math.max(y1, y2));
         if (bx1 >= bx2 || by1 >= by2) return;
-        ctx.drawHorizontalLine(bx1, bx2, by1, color);
-        ctx.drawHorizontalLine(bx1, bx2, by2, color);
-        ctx.drawVerticalLine(bx1, by1, by2, color);
-        ctx.drawVerticalLine(bx2, by1, by2, color);
+        ctx.horizontalLine(bx1, bx2, by1, color);
+        ctx.horizontalLine(bx1, bx2, by2, color);
+        ctx.verticalLine(bx1, by1, by2, color);
+        ctx.verticalLine(bx2, by1, by2, color);
     }
 
-    private static void renderTinyTown(DrawContext ctx, int x1, int y1, int x2, int y2,
+    private static void renderTinyTown(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2,
                                        int color, int sw, int sh) {
         if ((color >>> 24) == 0) return;
         int x = Math.max(0, Math.min(sw - 1, (x1 + x2) / 2));
@@ -434,7 +434,7 @@ public class WorldMapRenderer {
         ctx.fill(x, y, x + 1, y + 1, color);
     }
 
-    private static void renderCachedFill(DrawContext ctx, RingGeometry ring, int color,
+    private static void renderCachedFill(GuiGraphicsExtractor ctx, RingGeometry ring, int color,
                                          double cameraX, double cameraZ, double blockScale,
                                          int sw, int sh) {
         // fillData is a flat int[] with 4 values per rect: [minX, minZ, maxX, maxZ, ...]
@@ -913,14 +913,14 @@ public class WorldMapRenderer {
 
     // ── Nation capital markers ───────────────────────────────────────────────
 
-    private void renderNationCapitalStars(DrawContext ctx,
+    private void renderNationCapitalStars(GuiGraphicsExtractor ctx,
                                           double cameraX, double cameraZ, double blockScale,
                                           int sw, int sh,
                                           double worldLeft, double worldRight,
                                           double worldTop, double worldBottom,
                                           Map<String, EarthMcNationData> nationDetails) {
         if (!config.townsEnabled || !config.nationStarsEnabled || nationDetails.isEmpty()) return;
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
 
         for (EarthMcNationData nation : nationDetails.values()) {
@@ -948,7 +948,7 @@ public class WorldMapRenderer {
             int y = toScreenY(markerZ, cameraZ, blockScale, sh);
             if (x < -10 || x > sw + 10 || y < -10 || y > sh + 10) continue;
 
-            ctx.drawText(client.textRenderer, "★", x - 3, y - 5, 0xFFFFD84D, true);
+            ctx.text(client.font, "★", x - 3, y - 5, 0xFFFFD84D, true);
         }
     }
 
@@ -959,12 +959,12 @@ public class WorldMapRenderer {
 
     // ── Player rendering ─────────────────────────────────────────────────────
 
-    private void renderPlayers(DrawContext ctx,
+    private void renderPlayers(GuiGraphicsExtractor ctx,
                                double cameraX, double cameraZ, double blockScale,
                                int sw, int sh, Map<String, EarthMcPlayerData> playerDetails) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
-        String selfName = client.getSession().getUsername();
+        String selfName = client.getUser().getName();
         for (PlayerMarker p : api.getPlayers()) {
             if (p.name().equalsIgnoreCase(selfName)) continue;
 
@@ -985,16 +985,16 @@ public class WorldMapRenderer {
                 boolean showAffiliation = !affiliation.isBlank() && blockScale >= config.playerAffiliationMinScale;
                 int nameY = showAffiliation ? dotY + 7 : dotY - 4;
                 if (showAffiliation) {
-                    ctx.drawText(
-                            client.textRenderer,
+                    ctx.text(
+                            client.font,
                             affiliation,
                             dotX + DOT_HALF + 2,
                             dotY - 5,
                             0xFFB8D7FF,
                             true);
                 }
-                ctx.drawText(
-                        client.textRenderer,
+                ctx.text(
+                        client.font,
                         p.name(),
                         dotX + DOT_HALF + 2,
                         nameY,

@@ -1,13 +1,13 @@
 package net.townymap.gui;
 
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.CyclingButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 
@@ -32,7 +32,7 @@ public class TownyMapConfigScreen extends Screen {
     private int scrollOffset;
 
     public TownyMapConfigScreen(Screen parent) {
-        super(Text.literal("EarthMC Map Addon Settings"));
+        super(Component.literal("EarthMC Map Addon Settings"));
         this.parent = parent;
     }
 
@@ -45,55 +45,55 @@ public class TownyMapConfigScreen extends Screen {
         int controlX = cx - CONTROL_WIDTH / 2;
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.earthmcOnly)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("EarthMC Only"),
+            CycleButton.onOffBuilder(cfg.earthmcOnly)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("EarthMC Only"),
                        (btn, val) -> { cfg.earthmcOnly = val; cfg.save(); }),
                 18);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.townsEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Town Borders"),
+            CycleButton.onOffBuilder(cfg.townsEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Town Borders"),
                        (btn, val) -> { cfg.townsEnabled = val; cfg.save(); }),
                 74);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.squaremapBackgroundEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Squaremap Background"),
+            CycleButton.onOffBuilder(cfg.squaremapBackgroundEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Squaremap Background"),
                        (btn, val) -> { cfg.squaremapBackgroundEnabled = val; cfg.save(); }),
                 98);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.nationStarsEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Nation Capital Stars"),
+            CycleButton.onOffBuilder(cfg.nationStarsEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Nation Capital Stars"),
                        (btn, val) -> { cfg.nationStarsEnabled = val; cfg.save(); }),
                 122);
 
         addScrollingWidget(
-            CyclingButtonWidget.builder(TownyMapConfigScreen::borderModeText, cfg.borderOverlayMode)
-                .values(0, 1, 2)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Real Borders"),
+            CycleButton.builder(TownyMapConfigScreen::borderModeText, cfg.borderOverlayMode)
+                .withValues(0, 1, 2)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Real Borders"),
                        (btn, val) -> { cfg.borderOverlayMode = val; cfg.save(); }),
                 146);
 
         addScrollingWidget(new BorderThicknessSlider(controlX, 0, CONTROL_WIDTH, 20, cfg), 170);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.statusHighlightRainbow)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Map Mode RGB"),
+            CycleButton.onOffBuilder(cfg.statusHighlightRainbow)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Map Mode RGB"),
                        (btn, val) -> { cfg.statusHighlightRainbow = val; cfg.save(); }),
                 194);
 
         addScrollingWidget(new StatusHighlightHueSlider(controlX, 0, CONTROL_WIDTH, 20, cfg), 218);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.playersEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Online Players"),
+            CycleButton.onOffBuilder(cfg.playersEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Online Players"),
                        (btn, val) -> { cfg.playersEnabled = val; cfg.save(); }),
                 242);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.showPlayerNames)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Player Names"),
+            CycleButton.onOffBuilder(cfg.showPlayerNames)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Player Names"),
                        (btn, val) -> { cfg.showPlayerNames = val; cfg.save(); }),
                 266);
 
@@ -101,15 +101,15 @@ public class TownyMapConfigScreen extends Screen {
         addScrollingWidget(new PlayerAffiliationRangeSlider(controlX, 0, CONTROL_WIDTH, 20, cfg), 314);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.minimapExtensionsEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Minimap Extensions"),
+            CycleButton.onOffBuilder(cfg.minimapExtensionsEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Minimap Extensions"),
                        (btn, val) -> { cfg.minimapExtensionsEnabled = val; cfg.save(); }),
                 370);
 
         addScrollingWidget(
-            CyclingButtonWidget.builder(TownyMapConfigScreen::minimapTownNameModeText, cfg.minimapTownNameMode)
-                .values(0, 1, 2, 3)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Minimap Town Names"),
+            CycleButton.builder(TownyMapConfigScreen::minimapTownNameModeText, cfg.minimapTownNameMode)
+                .withValues(0, 1, 2, 3)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Minimap Town Names"),
                        (btn, val) -> {
                            cfg.minimapTownNameMode = val;
                            cfg.minimapTownNamesEnabled = val != 0;
@@ -118,44 +118,44 @@ public class TownyMapConfigScreen extends Screen {
                 394);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.minimapPlayersEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Players On Minimap"),
+            CycleButton.onOffBuilder(cfg.minimapPlayersEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Players On Minimap"),
                        (btn, val) -> { cfg.minimapPlayersEnabled = val; cfg.save(); }),
                 418);
 
         addScrollingWidget(
-            CyclingButtonWidget.builder(TownyMapConfigScreen::minimapChunkGridModeText, cfg.minimapChunkGridMode)
-                .values(0, 1, 2)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Minimap Chunk Grid"),
+            CycleButton.builder(TownyMapConfigScreen::minimapChunkGridModeText, cfg.minimapChunkGridMode)
+                .withValues(0, 1, 2)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Minimap Chunk Grid"),
                        (btn, val) -> { cfg.minimapChunkGridMode = val; cfg.save(); }),
                 442);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.minimapNationAlertEnabled)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Wilderness Player Alert"),
+            CycleButton.onOffBuilder(cfg.minimapNationAlertEnabled)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Wilderness Player Alert"),
                        (btn, val) -> { cfg.minimapNationAlertEnabled = val; cfg.save(); }),
                 466);
 
         addScrollingWidget(
-            CyclingButtonWidget.onOffBuilder(cfg.hideMinimapInNether)
-                .build(controlX, 0, CONTROL_WIDTH, 20, Text.literal("Hide Minimap In Nether"),
+            CycleButton.onOffBuilder(cfg.hideMinimapInNether)
+                .create(controlX, 0, CONTROL_WIDTH, 20, Component.literal("Hide Minimap In Nether"),
                        (btn, val) -> { cfg.hideMinimapInNether = val; cfg.save(); }),
                 490);
 
-        this.addDrawableChild(
-            ButtonWidget.builder(ScreenTexts.DONE, btn -> this.close())
-                .dimensions(controlX, this.height - 30, CONTROL_WIDTH, 20)
+        this.addRenderableWidget(
+            Button.builder(CommonComponents.GUI_DONE, btn -> this.onClose())
+                .bounds(controlX, this.height - 30, CONTROL_WIDTH, 20)
                 .build());
         updateScrollingWidgetPositions();
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         renderPanel(ctx);
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawCenteredTextWithShadow(this.textRenderer, this.title,
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.centeredText(this.font, this.title,
                 this.width / 2, 17, 0xFFFFFFFF);
-        ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal("EarthMC map overlays"),
+        ctx.centeredText(this.font, Component.literal("EarthMC map overlays"),
                 this.width / 2, 31, 0xFF9CA3AF);
         drawSections(ctx);
         drawScrollbar(ctx);
@@ -171,22 +171,22 @@ public class TownyMapConfigScreen extends Screen {
         return true;
     }
 
-    private <T extends ClickableWidget> T addScrollingWidget(T widget, int contentY) {
+    private <T extends AbstractWidget> T addScrollingWidget(T widget, int contentY) {
         scrollingWidgets.add(new PositionedWidget(widget, contentY));
-        return this.addDrawableChild(widget);
+        return this.addRenderableWidget(widget);
     }
 
     private void updateScrollingWidgetPositions() {
         int top = bodyTop();
         int bottom = bodyBottom();
         for (PositionedWidget entry : scrollingWidgets) {
-            ClickableWidget widget = entry.widget();
+            AbstractWidget widget = entry.widget();
             widget.setY(top + entry.contentY() - scrollOffset);
             widget.visible = widget.getBottom() >= top + 2 && widget.getY() <= bottom - 2;
         }
     }
 
-    private void renderPanel(DrawContext ctx) {
+    private void renderPanel(GuiGraphicsExtractor ctx) {
         int panelLeft = panelLeft();
         int panelRight = panelLeft + PANEL_WIDTH;
         int top = 40;
@@ -200,24 +200,24 @@ public class TownyMapConfigScreen extends Screen {
         ctx.fill(panelLeft, bodyBottom() + 1, panelRight, bottom, 0xAA14161A);
     }
 
-    private void drawSections(DrawContext ctx) {
+    private void drawSections(GuiGraphicsExtractor ctx) {
         drawSection(ctx, "General", 0);
         drawSection(ctx, "World Map", 56);
         drawSection(ctx, "Players", 224);
         drawSection(ctx, "Minimap", 352);
     }
 
-    private void drawSection(DrawContext ctx, String label, int contentY) {
+    private void drawSection(GuiGraphicsExtractor ctx, String label, int contentY) {
         int y = bodyTop() + contentY - scrollOffset;
         if (y < bodyTop() || y > bodyBottom() - 10) return;
         int x = this.width / 2 - CONTROL_WIDTH / 2;
         ctx.fill(x, y + 1, x + 3, y + 10, PANEL_ACCENT);
-        ctx.drawText(this.textRenderer, label, x + 8, y, 0xFFE5E7EB, true);
+        ctx.text(this.font, label, x + 8, y, 0xFFE5E7EB, true);
         int lineY = y + 12;
         ctx.fill(x, lineY, x + CONTROL_WIDTH, lineY + 1, 0x553A3D42);
     }
 
-    private void drawScrollbar(DrawContext ctx) {
+    private void drawScrollbar(GuiGraphicsExtractor ctx) {
         int maxScroll = maxScroll();
         if (maxScroll <= 0) return;
         int trackTop = bodyTop();
@@ -230,7 +230,7 @@ public class TownyMapConfigScreen extends Screen {
         ctx.fill(x - 1, thumbY, x + 3, thumbY + thumbHeight, 0xFF9CA3AF);
     }
 
-    private void drawScrollFades(DrawContext ctx) {
+    private void drawScrollFades(GuiGraphicsExtractor ctx) {
         int panelLeft = panelLeft();
         int panelRight = panelLeft + PANEL_WIDTH;
         if (scrollOffset > 0) {
@@ -242,8 +242,8 @@ public class TownyMapConfigScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.setScreen(parent);
     }
 
     private int bodyTop() {
@@ -262,16 +262,16 @@ public class TownyMapConfigScreen extends Screen {
         return Math.max(0, CONTENT_HEIGHT - (bodyBottom() - bodyTop()));
     }
 
-    private static Text borderModeText(Integer mode) {
-        return Text.literal(switch (mode) {
+    private static Component borderModeText(Integer mode) {
+        return Component.literal(switch (mode) {
             case 1 -> "Countries";
             case 2 -> "States + Countries";
             default -> "Off";
         });
     }
 
-    private static Text minimapTownNameModeText(Integer mode) {
-        return Text.literal(switch (mode) {
+    private static Component minimapTownNameModeText(Integer mode) {
+        return Component.literal(switch (mode) {
             case 1 -> "Nearby";
             case 2 -> "Major";
             case 3 -> "All";
@@ -279,8 +279,8 @@ public class TownyMapConfigScreen extends Screen {
         });
     }
 
-    private static Text minimapChunkGridModeText(Integer mode) {
-        return Text.literal(switch (mode) {
+    private static Component minimapChunkGridModeText(Integer mode) {
+        return Component.literal(switch (mode) {
             case 1 -> "Always";
             case 2 -> "Enlarged Only";
             default -> "Off";
@@ -291,20 +291,20 @@ public class TownyMapConfigScreen extends Screen {
         return String.format("#%06X", rgb & 0x00FFFFFF);
     }
 
-    private record PositionedWidget(ClickableWidget widget, int contentY) {}
+    private record PositionedWidget(AbstractWidget widget, int contentY) {}
 
-    private static final class PlayerNameRangeSlider extends SliderWidget {
+    private static final class PlayerNameRangeSlider extends AbstractSliderButton {
         private final TownyMapConfig config;
 
         private PlayerNameRangeSlider(int x, int y, int width, int height, TownyMapConfig config) {
-            super(x, y, width, height, Text.empty(), sliderValue(config.playerNameMinScale));
+            super(x, y, width, height, Component.empty(), sliderValue(config.playerNameMinScale));
             this.config = config;
             updateMessage();
         }
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal("Player Name Range: " + rangeLabel(value)));
+            this.setMessage(Component.literal("Player Name Range: " + rangeLabel(value)));
         }
 
         @Override
@@ -331,11 +331,11 @@ public class TownyMapConfigScreen extends Screen {
         }
     }
 
-    private static final class StatusHighlightHueSlider extends SliderWidget {
+    private static final class StatusHighlightHueSlider extends AbstractSliderButton {
         private final TownyMapConfig config;
 
         private StatusHighlightHueSlider(int x, int y, int width, int height, TownyMapConfig config) {
-            super(x, y, width, height, Text.empty(), hueFromRgb(config.statusHighlightColor));
+            super(x, y, width, height, Component.empty(), hueFromRgb(config.statusHighlightColor));
             this.config = config;
             updateMessage();
         }
@@ -343,9 +343,9 @@ public class TownyMapConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             if (config.statusHighlightRainbow) {
-                setMessage(Text.literal("Map Mode Color: RGB Cycle"));
+                setMessage(Component.literal("Map Mode Color: RGB Cycle"));
             } else {
-                setMessage(Text.literal("Map Mode Color: " + hexColor(config.statusHighlightColor)));
+                setMessage(Component.literal("Map Mode Color: " + hexColor(config.statusHighlightColor)));
             }
         }
 
@@ -397,18 +397,18 @@ public class TownyMapConfigScreen extends Screen {
         }
     }
 
-    private static final class PlayerAffiliationRangeSlider extends SliderWidget {
+    private static final class PlayerAffiliationRangeSlider extends AbstractSliderButton {
         private final TownyMapConfig config;
 
         private PlayerAffiliationRangeSlider(int x, int y, int width, int height, TownyMapConfig config) {
-            super(x, y, width, height, Text.empty(), sliderValue(config.playerAffiliationMinScale));
+            super(x, y, width, height, Component.empty(), sliderValue(config.playerAffiliationMinScale));
             this.config = config;
             updateMessage();
         }
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal("Town/Nation Range: " + rangeLabel(value)));
+            this.setMessage(Component.literal("Town/Nation Range: " + rangeLabel(value)));
         }
 
         @Override
@@ -436,7 +436,7 @@ public class TownyMapConfigScreen extends Screen {
     }
 
     /** Slider for border line thickness — range 0.5× to 3.0×, snaps to 0.25 steps. */
-    private static final class BorderThicknessSlider extends SliderWidget {
+    private static final class BorderThicknessSlider extends AbstractSliderButton {
 
         private static final double MIN = 0.1;
         private static final double MAX = 3.0;
@@ -444,14 +444,14 @@ public class TownyMapConfigScreen extends Screen {
         private final TownyMapConfig config;
 
         private BorderThicknessSlider(int x, int y, int width, int height, TownyMapConfig config) {
-            super(x, y, width, height, Text.empty(), toSlider(config.borderThicknessMultiplier));
+            super(x, y, width, height, Component.empty(), toSlider(config.borderThicknessMultiplier));
             this.config = config;
             updateMessage();
         }
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Border Thickness: %.2f×", snapped(value))));
+            setMessage(Component.literal(String.format("Border Thickness: %.2f×", snapped(value))));
         }
 
         @Override

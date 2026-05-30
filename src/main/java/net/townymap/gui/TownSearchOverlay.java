@@ -1,11 +1,11 @@
 package net.townymap.gui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
 import net.townymap.model.EarthMcNationData;
 import net.townymap.model.EarthMcPlayerData;
 import net.townymap.model.MapJumpTarget;
@@ -70,7 +70,7 @@ public final class TownSearchOverlay {
 
     private TownSearchOverlay() {}
 
-    public static void render(DrawContext ctx, int sw, int sh,
+    public static void render(GuiGraphicsExtractor ctx, int sw, int sh,
                               List<TownData> towns, List<PlayerMarker> players,
                               Map<String, TownPopupData> townDetails,
                               List<EarthMcPlayerData> apiPlayers,
@@ -79,8 +79,8 @@ public final class TownSearchOverlay {
                               List<EarthMcNationData> apiNations,
                               Map<String, EarthMcNationData> nationDetails,
                               List<String> favoriteTowns) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        TextRenderer tr = mc.textRenderer;
+        Minecraft mc = Minecraft.getInstance();
+        Font tr = mc.font;
         int x = left(sw);
         int y = top();
         int border = focused ? ACTIVE_BORDER : BORDER;
@@ -90,7 +90,7 @@ public final class TownSearchOverlay {
 
         String display = query.isEmpty() && !focused ? "Search towns/nations/players" : query;
         int color = query.isEmpty() && !focused ? 0xFFAAAAAA : 0xFFFFFFFF;
-        ctx.drawText(tr, display, x + 7, y + 5, color, true);
+        ctx.text(tr, display, x + 7, y + 5, color, true);
         renderFavorites(ctx, tr, favoritesX(x), y, sw, towns, favoriteTowns);
 
         // The results dropdown shows only while the bar is focused (actively
@@ -105,7 +105,7 @@ public final class TownSearchOverlay {
                 int rowY = resultRowY(y, i);
                 ctx.fill(x - 1, rowY - 1, x + WIDTH + 1, rowY + ROW_HEIGHT + 1, BORDER);
                 ctx.fill(x, rowY, x + WIDTH, rowY + ROW_HEIGHT, i == selected ? HOVER : BG);
-                ctx.drawText(tr, trimToWidth(tr, result.label(), WIDTH - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
+                ctx.text(tr, trimToWidth(tr, result.label(), WIDTH - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
             }
         }
         renderSelectedInfo(ctx, tr, sw, sh,
@@ -539,7 +539,7 @@ public final class TownSearchOverlay {
         invalidateResults();
     }
 
-    private static void renderSelectedInfo(DrawContext ctx, TextRenderer tr, int sw, int sh,
+    private static void renderSelectedInfo(GuiGraphicsExtractor ctx, Font tr, int sw, int sh,
                                            List<TownData> towns, List<PlayerMarker> players,
                                            Map<String, TownPopupData> townDetails,
                                            Map<String, EarthMcPlayerData> playerDetails,
@@ -574,15 +574,15 @@ public final class TownSearchOverlay {
         int ty = y + 7;
         for (InfoRow row : lines) {
             if (row.hasLink()) {
-                int prefixW = tr.getWidth(row.prefix());
-                ctx.drawText(tr, row.prefix(), x + 7, ty, 0xFFFFFFFF, true);
+                int prefixW = tr.width(row.prefix());
+                ctx.text(tr, row.prefix(), x + 7, ty, 0xFFFFFFFF, true);
                 int nameX = x + 7 + prefixW;
-                int nameW = tr.getWidth(row.name());
+                int nameW = tr.width(row.name());
                 boolean hovered = mx >= nameX && mx <= nameX + nameW && my >= ty - 1 && my <= ty + 9;
-                ctx.drawText(tr, row.name(), nameX, ty, hovered ? LINK_HOVER_COLOR : LINK_COLOR, true);
+                ctx.text(tr, row.name(), nameX, ty, hovered ? LINK_HOVER_COLOR : LINK_COLOR, true);
                 infoLinks.add(new InfoLink(nameX, ty - 1, nameW, 10, row.linkType(), row.name()));
             } else {
-                ctx.drawText(tr, trimToWidth(tr, row.prefix(), boxW - 14), x + 7, ty, 0xFFFFFFFF, true);
+                ctx.text(tr, trimToWidth(tr, row.prefix(), boxW - 14), x + 7, ty, 0xFFFFFFFF, true);
             }
             ty += 12;
         }
@@ -593,10 +593,10 @@ public final class TownSearchOverlay {
             infoDiscordH = ROW_HEIGHT;
             infoDiscordVisible = true;
             infoDiscordUrl = discordUrl;
-            ButtonWidget button = ButtonWidget.builder(coloredText("Discord", 0xFFFFFF), ignored -> {})
-                    .dimensions(infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH)
+            Button button = Button.builder(coloredText("Discord", 0xFFFFFF), ignored -> {})
+                    .bounds(infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH)
                     .build();
-            button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+            button.extractRenderState(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
         }
     }
 
@@ -718,9 +718,9 @@ public final class TownSearchOverlay {
         return date + " §7(" + ageLabel(timestampMs) + ")";
     }
 
-    private static int rowWidth(TextRenderer tr, InfoRow row) {
-        int w = tr.getWidth(row.prefix());
-        if (row.hasLink()) w += tr.getWidth(row.name());
+    private static int rowWidth(Font tr, InfoRow row) {
+        int w = tr.width(row.prefix());
+        if (row.hasLink()) w += tr.width(row.name());
         return w;
     }
 
@@ -763,13 +763,13 @@ public final class TownSearchOverlay {
         return (hours / 24) + "d ago";
     }
 
-    private static void renderFavorites(DrawContext ctx, TextRenderer tr, int x, int y, int sw,
+    private static void renderFavorites(GuiGraphicsExtractor ctx, Font tr, int x, int y, int sw,
                                         List<TownData> towns, List<String> favoriteTowns) {
         String label = "Favorites";
-        ButtonWidget button = ButtonWidget.builder(coloredText(label, 0xFFFFFF), ignored -> {})
-                .dimensions(x, y, FAVORITES_WIDTH, ROW_HEIGHT)
+        Button button = Button.builder(coloredText(label, 0xFFFFFF), ignored -> {})
+                .bounds(x, y, FAVORITES_WIDTH, ROW_HEIGHT)
                 .build();
-        button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+        button.extractRenderState(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
         if (!favoritesOpen) return;
 
         List<TownData> favorites = favoriteTowns(towns, favoriteTowns);
@@ -779,13 +779,13 @@ public final class TownSearchOverlay {
             int ty = resultRowY(y, i);
             ctx.fill(x - 1, ty - 1, x + FAVORITES_WIDTH + 1, ty + ROW_HEIGHT + 1, BORDER);
             ctx.fill(x, ty, x + FAVORITES_WIDTH, ty + ROW_HEIGHT, BG);
-            ctx.drawText(tr, trimToWidth(tr, town.name(), FAVORITES_WIDTH - 14), x + 7, ty + 5, 0xFFFFFFFF, true);
+            ctx.text(tr, trimToWidth(tr, town.name(), FAVORITES_WIDTH - 14), x + 7, ty + 5, 0xFFFFFFFF, true);
         }
         if (favorites.isEmpty()) {
             int rowY = resultRowY(y, 0);
             ctx.fill(x - 1, rowY - 1, x + FAVORITES_WIDTH + 1, rowY + ROW_HEIGHT + 1, BORDER);
             ctx.fill(x, rowY, x + FAVORITES_WIDTH, rowY + ROW_HEIGHT, BG);
-            ctx.drawText(tr, trimToWidth(tr, "No favorites", FAVORITES_WIDTH - 14), x + 7, rowY + 5, 0xFFAAAAAA, true);
+            ctx.text(tr, trimToWidth(tr, "No favorites", FAVORITES_WIDTH - 14), x + 7, rowY + 5, 0xFFAAAAAA, true);
         }
     }
 
@@ -830,25 +830,25 @@ public final class TownSearchOverlay {
         return null;
     }
 
-    private static String trimToWidth(TextRenderer tr, String text, int width) {
-        if (tr.getWidth(text) <= width) return text;
+    private static String trimToWidth(Font tr, String text, int width) {
+        if (tr.width(text) <= width) return text;
         String ellipsis = "...";
-        int max = Math.max(1, width - tr.getWidth(ellipsis));
-        return tr.trimToWidth(text, max) + ellipsis;
+        int max = Math.max(1, width - tr.width(ellipsis));
+        return tr.plainSubstrByWidth(text, max) + ellipsis;
     }
 
-    private static Text coloredText(String label, int textColor) {
-        return Text.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
+    private static Component coloredText(String label, int textColor) {
+        return Component.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
     }
 
     private static int scaledMouseX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledXPos(mc.getWindow()));
     }
 
     private static int scaledMouseY() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledYPos(mc.getWindow()));
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int w, int h) {
@@ -860,8 +860,8 @@ public final class TownSearchOverlay {
     }
 
     private static int top() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        int sh = mc == null ? 360 : mc.getWindow().getScaledHeight();
+        Minecraft mc = Minecraft.getInstance();
+        int sh = mc == null ? 360 : mc.getWindow().getGuiScaledHeight();
         return Math.max(36, sh - ROW_HEIGHT - 18);
     }
 

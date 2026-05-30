@@ -1,11 +1,11 @@
 package net.townymap.render;
 
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.Identifier;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 import net.townymap.api.SquaremapApiClient;
@@ -72,11 +72,11 @@ public final class TownyMinimapOverlay {
         cachedRenderData = new VisibleRenderData(new TownData[0], List.of(), List.of(), List.of());
     }
 
-    public static void render(DrawContext ctx, MinimapSession session, ModuleRenderContext rc) {
+    public static void render(GuiGraphicsExtractor ctx, MinimapSession session, ModuleRenderContext rc) {
         render(ctx, session, rc.x, rc.y, Math.min(rc.w, rc.h));
     }
 
-    public static void render(DrawContext ctx, MinimapSession session, int mapX, int mapY, int mapSize) {
+    public static void render(GuiGraphicsExtractor ctx, MinimapSession session, int mapX, int mapY, int mapSize) {
         TownyMapConfig config = TownyMapMod.getConfig();
         SquaremapApiClient api = TownyMapMod.getApiClient();
         lastRenderCanCoverWaypoints = false;
@@ -85,9 +85,9 @@ public final class TownyMinimapOverlay {
 
         api.tickMinimapTownMarkers();
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        ClientPlayerEntity player = client.player;
-        if (player == null || client.world == null) return;
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) return;
 
         int size = mapSize;
         if (size <= 12) return;
@@ -131,7 +131,7 @@ public final class TownyMinimapOverlay {
             }
             renderChunkCounterSelection(ctx, client, config, mapX, mapY, size, centerX, centerY,
                     playerX, playerZ, pixelsPerBlock, angle, sin, cos, clipLeft, clipTop, clipRight, clipBottom);
-            if (squaremapRendered) ctx.drawDeferredElements();
+            if (squaremapRendered) ctx.extractDeferredElements(0, 0, 0.0F);
             return;
         }
 
@@ -150,7 +150,7 @@ public final class TownyMinimapOverlay {
         lastRenderCanCoverWaypoints = squaremapRendered || config.chunkCounterEnabled || !renderData.fillCells().isEmpty();
 
         ctx.enableScissor(clipLeft, clipTop, clipRight + 1, clipBottom + 1);
-        Matrix3x2fStack matrices = ctx.getMatrices();
+        Matrix3x2fStack matrices = ctx.pose();
         matrices.pushMatrix();
         try {
             matrices.translate((float) centerX, (float) centerY);
@@ -204,10 +204,10 @@ public final class TownyMinimapOverlay {
                     playerX, playerZ, pixelsPerBlock, sin, cos, clipLeft, clipTop, clipRight, clipBottom);
         }
 
-        ctx.drawDeferredElements();
+        ctx.extractDeferredElements(0, 0, 0.0F);
     }
 
-    public static void renderWaypointsOnTop(DrawContext ctx, MinimapSession session,
+    public static void renderWaypointsOnTop(GuiGraphicsExtractor ctx, MinimapSession session,
                                             int mapX, int mapY, int size) {
         TownyMapConfig config = TownyMapMod.getConfig();
         if (config == null || !config.minimapExtensionsEnabled || size <= 12) return;
@@ -215,9 +215,9 @@ public final class TownyMinimapOverlay {
         if (session.getProcessor().isEnlargedMap()) return;
         if (!lastRenderCanCoverWaypoints) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        ClientPlayerEntity player = client.player;
-        if (player == null || client.world == null) return;
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) return;
         if (!session.getProcessor().getMinimap().getWaypointMapRenderer()
                 .shouldRender(MinimapElementRenderLocation.OVER_MINIMAP)) {
             return;
@@ -261,7 +261,7 @@ public final class TownyMinimapOverlay {
         double cos = Math.cos(angle);
         int iconPadding = Math.max(10, (int) Math.ceil(12.0 * iconScale));
 
-        Matrix3x2fStack matrices = ctx.getMatrices();
+        Matrix3x2fStack matrices = ctx.pose();
         for (Waypoint waypoint : waypoints) {
             if (waypoint == null || waypoint.isDisabled()) continue;
 
@@ -389,7 +389,7 @@ public final class TownyMinimapOverlay {
         return Math.max(min, Math.min(max, value));
     }
 
-    private static void renderChunkCounterSelection(DrawContext ctx, MinecraftClient client, TownyMapConfig config,
+    private static void renderChunkCounterSelection(GuiGraphicsExtractor ctx, Minecraft client, TownyMapConfig config,
                                                     int mapX, int mapY, int size,
                                                     double centerX, double centerY,
                                                     double playerX, double playerZ,
@@ -398,7 +398,7 @@ public final class TownyMinimapOverlay {
                                                     int clipLeft, int clipTop, int clipRight, int clipBottom) {
         if (!config.chunkCounterEnabled) return;
         ctx.enableScissor(clipLeft, clipTop, clipRight + 1, clipBottom + 1);
-        Matrix3x2fStack matrices = ctx.getMatrices();
+        Matrix3x2fStack matrices = ctx.pose();
         matrices.pushMatrix();
         try {
             matrices.translate((float) centerX, (float) centerY);
@@ -414,14 +414,14 @@ public final class TownyMinimapOverlay {
                 playerX, playerZ, pixelsPerBlock, sin, cos, clipLeft, clipTop, clipRight, clipBottom);
     }
 
-    private static void renderMinimapChunkGrid(DrawContext ctx, MinimapSession session, TownyMapConfig config,
+    private static void renderMinimapChunkGrid(GuiGraphicsExtractor ctx, MinimapSession session, TownyMapConfig config,
                                                double centerX, double centerY,
                                                double playerX, double playerZ,
                                                double visibleBlocks, double pixelsPerBlock, double angle,
                                                int clipLeft, int clipTop, int clipRight, int clipBottom) {
         if (!shouldRenderMinimapChunkGrid(session, config, pixelsPerBlock)) return;
         ctx.enableScissor(clipLeft, clipTop, clipRight + 1, clipBottom + 1);
-        Matrix3x2fStack matrices = ctx.getMatrices();
+        Matrix3x2fStack matrices = ctx.pose();
         matrices.pushMatrix();
         try {
             matrices.translate((float) centerX, (float) centerY);
@@ -440,7 +440,7 @@ public final class TownyMinimapOverlay {
         return CHUNK_SIZE * pixelsPerBlock >= MIN_MINIMAP_CHUNK_GRID_SPACING;
     }
 
-    private static void drawChunkGridScreenSpace(DrawContext ctx, double playerX, double playerZ,
+    private static void drawChunkGridScreenSpace(GuiGraphicsExtractor ctx, double playerX, double playerZ,
                                                  double visibleBlocks, double pixelsPerBlock) {
         if (CHUNK_SIZE * pixelsPerBlock < MIN_MINIMAP_CHUNK_GRID_SPACING) return;
         int minChunkX = floorToChunk(playerX - visibleBlocks);
@@ -599,7 +599,7 @@ public final class TownyMinimapOverlay {
         return null;
     }
 
-    private static void fillVisibleTownChunks(DrawContext ctx, List<ChunkCell> fillCells, TownyMapConfig config) {
+    private static void fillVisibleTownChunks(GuiGraphicsExtractor ctx, List<ChunkCell> fillCells, TownyMapConfig config) {
         for (ChunkCell cell : fillCells) {
             TownData town = cell.town();
             boolean favorite = TownyMapMod.isFavorite(town.name());
@@ -609,7 +609,7 @@ public final class TownyMinimapOverlay {
         }
     }
 
-    private static void drawVisibleTownEdges(DrawContext ctx, List<ChunkEdge> edges, TownyMapConfig config) {
+    private static void drawVisibleTownEdges(GuiGraphicsExtractor ctx, List<ChunkEdge> edges, TownyMapConfig config) {
         for (ChunkEdge edge : edges) {
             boolean favorite = TownyMapMod.isFavorite(edge.town().name());
             int outlineColor = favorite ? FAVORITE_OUTLINE : edge.town().argbColor(config.borderAlpha);
@@ -617,7 +617,7 @@ public final class TownyMinimapOverlay {
         }
     }
 
-    private static void drawOptimisticClaimChunks(DrawContext ctx) {
+    private static void drawOptimisticClaimChunks(GuiGraphicsExtractor ctx) {
         for (OptimisticClaimChunk chunk : TownyMapMod.optimisticClaimChunks()) {
             int blockX = chunk.blockX();
             int blockZ = chunk.blockZ();
@@ -629,7 +629,7 @@ public final class TownyMinimapOverlay {
         }
     }
 
-    private static void drawChunkEdge(DrawContext ctx, int x1, int z1, int x2, int z2, int color) {
+    private static void drawChunkEdge(GuiGraphicsExtractor ctx, int x1, int z1, int x2, int z2, int color) {
         int thickness = 1;
         if (z1 == z2) {
             ctx.fill(Math.min(x1, x2), z1, Math.max(x1, x2), z1 + thickness, color);
@@ -682,7 +682,7 @@ public final class TownyMinimapOverlay {
         return inside;
     }
 
-    private static void renderTownNames(DrawContext ctx, MinecraftClient client,
+    private static void renderTownNames(GuiGraphicsExtractor ctx, Minecraft client,
                                         List<LabelAnchor> anchors,
                                         int mapX, int mapY, int size,
                                         double playerX, double playerZ, double pixelsPerBlock,
@@ -699,7 +699,7 @@ public final class TownyMinimapOverlay {
             int x = (int) Math.round(centerX + (dx * cos - dz * sin) * pixelsPerBlock);
             int y = (int) Math.round(centerY + (dx * sin + dz * cos) * pixelsPerBlock);
             if (x < clipLeft || x > clipRight || y < clipTop || y > clipBottom) continue;
-            int textWidth = client.textRenderer.getWidth(anchor.name());
+            int textWidth = client.font.width(anchor.name());
             if (textWidth > size * 0.55) continue;
             Label label = new Label(anchor.name(), x, y, textWidth);
             if (overlaps(labels, label)) continue;
@@ -712,8 +712,8 @@ public final class TownyMinimapOverlay {
             for (Label label : labels) {
                 int x = label.x - label.width / 2;
                 int y = label.y - 4;
-                ctx.drawText(client.textRenderer, label.text, x + 1, y + 1, 0xAA000000, false);
-                ctx.drawText(client.textRenderer, label.text, x, y, 0xFFFFFFFF, false);
+                ctx.text(client.font, label.text, x + 1, y + 1, 0xAA000000, false);
+                ctx.text(client.font, label.text, x, y, 0xFFFFFFFF, false);
             }
         } finally {
             ctx.disableScissor();
@@ -756,21 +756,21 @@ public final class TownyMinimapOverlay {
      * Only shown when the squaremap background is active.
      */
     // Xaero's worldmap arrow sprite — same texture, same sprite, now rendered on the minimap.
-    private static final Identifier XAERO_GUI = Identifier.of("xaeroworldmap", "gui/gui.png");
+    private static final Identifier XAERO_GUI = Identifier.fromNamespaceAndPath("xaeroworldmap", "gui/gui.png");
 
     /**
      * Draws Xaero's own arrow sprite at the minimap centre, matching the player's yaw.
-     * Uses DrawContext so it composites on top of the squaremap tile batch at frame-end.
+     * Uses GuiGraphicsExtractor so it composites on top of the squaremap tile batch at frame-end.
      */
-    public static void renderPlayerIndicator(DrawContext ctx, MinimapSession session,
+    public static void renderPlayerIndicator(GuiGraphicsExtractor ctx, MinimapSession session,
                                              int mapX, int mapY, int size) {
         TownyMapConfig config = TownyMapMod.getConfig();
         if (config == null || !config.minimapExtensionsEnabled || !config.squaremapBackgroundEnabled) return;
         if (session.getProcessor().isCaveModeDisplayed()) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player == null) return;
-        float arrowYaw = isMinimapNorthLocked(session) ? client.player.getYaw() : 180.0F;
+        float arrowYaw = isMinimapNorthLocked(session) ? client.player.getYRot() : 180.0F;
         float yawRad = (float) Math.toRadians(arrowYaw);
 
         float cx = mapX + size / 2.0f;
@@ -789,7 +789,7 @@ public final class TownyMinimapOverlay {
         float arrowScale = Math.max(0.2f, Math.min(1.5f, 0.5f * size / minimapSize));
         float shadowOffset = 2f * arrowScale;
 
-        Matrix3x2fStack m = ctx.getMatrices();
+        Matrix3x2fStack m = ctx.pose();
 
         // Shadow
         m.pushMatrix();
@@ -808,8 +808,8 @@ public final class TownyMinimapOverlay {
         m.popMatrix();
     }
 
-    private static void drawXaeroArrowSprite(DrawContext ctx, int color) {
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, XAERO_GUI,
+    private static void drawXaeroArrowSprite(GuiGraphicsExtractor ctx, int color) {
+        ctx.blit(RenderPipelines.GUI_TEXTURED, XAERO_GUI,
                 -13, -5,   // centers the 26×28 sprite at the origin
                 0f, 0f,    // UV start in the 256×256 sheet (sprite is at top-left)
                 26, 28,
@@ -817,15 +817,15 @@ public final class TownyMinimapOverlay {
                 color);
     }
 
-    public static void renderCompassDirections(DrawContext ctx, MinimapSession session,
+    public static void renderCompassDirections(GuiGraphicsExtractor ctx, MinimapSession session,
                                                int mapX, int mapY, int size) {
         TownyMapConfig config = TownyMapMod.getConfig();
         if (config == null || !config.minimapExtensionsEnabled || !config.squaremapBackgroundEnabled) return;
         if (session.getProcessor().isCaveModeDisplayed()) return;
         if (size <= 24) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) return;
 
         double angle = minimapAngle(session, client);
         double sin = Math.sin(angle);
@@ -837,10 +837,10 @@ public final class TownyMinimapOverlay {
         drawCompassLetterOnBorder(ctx, client, "E", centerX, centerY, cos, sin, size);
         drawCompassLetterOnBorder(ctx, client, "S", centerX, centerY, -sin, cos, size);
         drawCompassLetterOnBorder(ctx, client, "W", centerX, centerY, -cos, -sin, size);
-        ctx.drawDeferredElements();
+        ctx.extractDeferredElements(0, 0, 0.0F);
     }
 
-    private static void drawCompassLetterOnBorder(DrawContext ctx, MinecraftClient client, String letter,
+    private static void drawCompassLetterOnBorder(GuiGraphicsExtractor ctx, Minecraft client, String letter,
                                                   double centerX, double centerY,
                                                   double dirX, double dirY, int size) {
         double maxComponent = Math.max(Math.abs(dirX), Math.abs(dirY));
@@ -850,25 +850,25 @@ public final class TownyMinimapOverlay {
         drawCompassLetter(ctx, client, letter, centerX + dirX * scale, centerY + dirY * scale);
     }
 
-    private static void drawCompassLetter(DrawContext ctx, MinecraftClient client, String letter,
+    private static void drawCompassLetter(GuiGraphicsExtractor ctx, Minecraft client, String letter,
                                           double centerX, double centerY) {
-        int width = client.textRenderer.getWidth(letter);
-        int height = client.textRenderer.fontHeight;
+        int width = client.font.width(letter);
+        int height = client.font.lineHeight;
         int x = (int) Math.round(centerX - width / 2.0);
         int y = (int) Math.round(centerY - height / 2.0);
-        ctx.drawText(client.textRenderer, letter, x + 1, y + 1, 0xFFFF5ACD, false);
-        ctx.drawText(client.textRenderer, letter, x, y, 0xFFFFFFFF, false);
+        ctx.text(client.font, letter, x + 1, y + 1, 0xFFFF5ACD, false);
+        ctx.text(client.font, letter, x, y, 0xFFFFFFFF, false);
     }
 
-    public static void renderSquaremapBackground(DrawContext ctx, MinimapSession session,
+    public static void renderSquaremapBackground(GuiGraphicsExtractor ctx, MinimapSession session,
                                                  int mapX, int mapY, int size) {
         TownyMapConfig config = TownyMapMod.getConfig();
         if (config == null || !config.minimapExtensionsEnabled || !config.squaremapBackgroundEnabled) return;
         if (session.getProcessor().isCaveModeDisplayed()) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        ClientPlayerEntity player = client.player;
-        if (player == null || client.world == null || size <= 12) return;
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null || size <= 12) return;
 
         double zoom = Math.max(0.25, session.getProcessor().getMinimapZoom());
         double blocksAcross = Math.max(64.0, session.getProcessor().getMinimapSize() * zoom);
@@ -887,7 +887,7 @@ public final class TownyMinimapOverlay {
                 bottom - MINIMAP_CLIP_INSET);
     }
 
-    private static void renderSquaremapBackground(DrawContext ctx,
+    private static void renderSquaremapBackground(GuiGraphicsExtractor ctx,
                                                   int mapX, int mapY, int size,
                                                   double playerX, double playerZ,
                                                   double pixelsPerBlock, double angle,
@@ -895,7 +895,7 @@ public final class TownyMinimapOverlay {
                                                   int clipRight, int clipBottom) {
         if (clipLeft > clipRight || clipTop > clipBottom) return;
         ctx.enableScissor(clipLeft, clipTop, clipRight + 1, clipBottom + 1);
-        Matrix3x2fStack matrices = ctx.getMatrices();
+        Matrix3x2fStack matrices = ctx.pose();
         matrices.pushMatrix();
         try {
             float center = size / 2.0F;
@@ -909,7 +909,7 @@ public final class TownyMinimapOverlay {
         }
     }
 
-    private static void renderPlayerDots(DrawContext ctx, List<PlayerMarker> players, String selfName,
+    private static void renderPlayerDots(GuiGraphicsExtractor ctx, List<PlayerMarker> players, String selfName,
                                          int mapX, int mapY, int size,
                                          double playerX, double playerZ, double pixelsPerBlock,
                                          double sin, double cos,
@@ -939,11 +939,11 @@ public final class TownyMinimapOverlay {
         }
     }
 
-    private static double minimapAngle(MinimapSession session, MinecraftClient client) {
+    private static double minimapAngle(MinimapSession session, Minecraft client) {
         if (isMinimapNorthLocked(session)) {
             return 0.0;
         }
-        return Math.toRadians(180.0 - client.gameRenderer.getCamera().getYaw());
+        return Math.toRadians(180.0 - client.gameRenderer.getMainCamera().yRot());
     }
 
     private static boolean isMinimapNorthLocked(MinimapSession session) {

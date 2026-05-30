@@ -1,13 +1,13 @@
 package net.townymap.mixin;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.Identifier;
 import org.joml.Matrix3x2fStack;
 import net.townymap.TownyMapMod;
 import net.townymap.gui.TownInfoOverlay;
@@ -30,17 +30,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Injects into Xaero's GuiMap.
  *
- * Rendering order inside method_25394 (Screen.render):
+ * Rendering order inside extractRenderState (Screen.render):
  *   1. renderPreDropdown — waypoints, labels, town overlays (HEAD/RETURN inject here)
- *   2. Squaremap tile compositing (DrawContext flush in onBeforePlayerArrow)
+ *   2. Squaremap tile compositing (GuiGraphicsExtractor flush in onBeforePlayerArrow)
  *   3. Xaero's player arrow (drawArrowOnMap via vertex buffers)
- *   4. method_25394 RETURN — our arrow re-draw fires here, guaranteed on top of tiles
+ *   4. extractRenderState RETURN — our arrow re-draw fires here, guaranteed on top of tiles
  *
  * Town overlays and info UI render at renderPreDropdown HEAD (clean matrix state).
- * The player arrow MUST render at method_25394 RETURN so it lands after the
- * squaremap DrawContext flush, not before it.
+ * The player arrow MUST render at extractRenderState RETURN so it lands after the
+ * squaremap GuiGraphicsExtractor flush, not before it.
  *
- * method_25402 = mouseClicked(Click, boolean) in MC 1.21.11.
+ * mouseClicked = mouseClicked(MouseButtonEvent, boolean) in MC 1.21.11.
  */
 @Mixin(targets = "xaero.map.gui.GuiMap", remap = false)
 public abstract class MixinGuiMap {
@@ -58,7 +58,7 @@ public abstract class MixinGuiMap {
     // ── All overlay rendering at HEAD (clean GL/matrix state) ─────────────────
 
     @Inject(
-            method = "method_25394",
+            method = "extractRenderState",
             at = @At(
                     value = "FIELD",
                     target = "Lxaero/map/common/config/option/WorldMapProfiledConfigOptions;ARROW:Lxaero/lib/common/config/option/BooleanConfigOption;",
@@ -67,12 +67,12 @@ public abstract class MixinGuiMap {
             ),
             remap = false
     )
-    private void onBeforePlayerArrow(DrawContext ctx, int mouseX, int mouseY,
+    private void onBeforePlayerArrow(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {
         try {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            int w = mc.getWindow().getScaledWidth();
-            int h = mc.getWindow().getScaledHeight();
+            Minecraft mc = Minecraft.getInstance();
+            int w = mc.getWindow().getGuiScaledWidth();
+            int h = mc.getWindow().getGuiScaledHeight();
             double guiScale = (screenScale > 0) ? scale / screenScale : scale;
             TownyMapMod.renderSquaremapBackground(ctx, cameraX, cameraZ, guiScale, w, h);
             TownyMapMod.renderOnWorldMap(ctx, cameraX, cameraZ, guiScale, w, h);
@@ -82,7 +82,7 @@ public abstract class MixinGuiMap {
                 TownyMapMod.renderHoveredWorldMapChunk(ctx, cameraX, cameraZ, guiScale, w, h, worldX, worldZ);
                 TownyMapMod.renderChunkCounter(ctx, cameraX, cameraZ, guiScale, w, h, worldX, worldZ);
             }
-            ctx.drawDeferredElements();
+            ctx.extractDeferredElements(mouseX, mouseY, delta);
             clearDepthForXaeroArrowIfAvailable();
             disableDepthTestIfAvailable();
         } catch (Exception e) {
@@ -91,15 +91,15 @@ public abstract class MixinGuiMap {
     }
 
     @Inject(method = "renderPreDropdown", at = @At("HEAD"), remap = false)
-    private void onRenderPreDropdown(DrawContext ctx, int mouseX, int mouseY,
+    private void onRenderPreDropdown(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {
         try {
             // Arrow first, so the UI panels below queue on top of it in the batch.
             renderPlayerArrow(ctx);
 
-            MinecraftClient mc = MinecraftClient.getInstance();
-            int w = mc.getWindow().getScaledWidth();
-            int h = mc.getWindow().getScaledHeight();
+            Minecraft mc = Minecraft.getInstance();
+            int w = mc.getWindow().getGuiScaledWidth();
+            int h = mc.getWindow().getGuiScaledHeight();
             double guiScale = (screenScale > 0) ? scale / screenScale : scale;
             if (guiScale > 0) {
                 double worldX = (mouseX - w / 2.0) / guiScale + cameraX;
@@ -114,27 +114,27 @@ public abstract class MixinGuiMap {
         }
     }
 
-    // Player arrow, drawn via DrawContext at the START of renderPreDropdown.
+    // Player arrow, drawn via GuiGraphicsExtractor at the START of renderPreDropdown.
     //
     // Layering requirement: the arrow must sit ABOVE the squaremap tiles but BELOW
     // our UI panels (search bar, town info, toggles).  The chronology in
-    // method_25394 is: onBeforePlayerArrow (tiles drawn + drawDeferredElements
+    // extractRenderState is: onBeforePlayerArrow (tiles drawn + deferred elements
     // flush) → renderPreDropdown (our overlays) → RETURN.  Drawing the arrow here,
     // before the UI panels, queues it into the deferred batch ahead of them, so the
     // arrow renders under the UI; and since the tiles were already flushed in
     // onBeforePlayerArrow, the arrow still renders on top of the tiles.
     //
-    // (Previously this drew at method_25394 RETURN, which queued the arrow AFTER the
+    // (Previously this drew at extractRenderState RETURN, which queued the arrow AFTER the
     // UI panels — making the arrow draw over the search box.)
-    private void renderPlayerArrow(DrawContext ctx) {
+    private void renderPlayerArrow(GuiGraphicsExtractor ctx) {
         try {
             if (!TownyMapMod.shouldRenderWorldMapIndicatorOverlay()) return;
-            MinecraftClient mc = MinecraftClient.getInstance();
-            ClientPlayerEntity player = mc.player;
-            if (player == null || mc.world == null) return;
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer player = mc.player;
+            if (player == null || mc.level == null) return;
 
-            int w = mc.getWindow().getScaledWidth();
-            int h = mc.getWindow().getScaledHeight();
+            int w = mc.getWindow().getGuiScaledWidth();
+            int h = mc.getWindow().getGuiScaledHeight();
             double guiScale = (screenScale > 0) ? scale / screenScale : scale;
             if (guiScale <= 0) return;
 
@@ -144,8 +144,8 @@ public abstract class MixinGuiMap {
             float sy = (float) (h / 2.0 + dz * guiScale);
             if (sx < -32 || sx > w + 32 || sy < -32 || sy > h + 32) return;
 
-            float yawRad = (float) Math.toRadians(player.getYaw());
-            Matrix3x2fStack m = ctx.getMatrices();
+            float yawRad = (float) Math.toRadians(player.getYRot());
+            Matrix3x2fStack m = ctx.pose();
 
             // Replicate Xaero's own arrow sizing.
             // Xaero passes sc = scaleMultiplier / scale to drawObjectOnMap, which then
@@ -153,8 +153,8 @@ public abstract class MixinGuiMap {
             // 1 world block (their map matrix already encodes guiScale).  So the arrow
             // appears 26 * sc * guiScale = 26 * smult / screenScale GUI pixels wide —
             // constant regardless of zoom, only growing on HiDPI screens > 1080 px tall.
-            int fwMin = Math.min(mc.getWindow().getFramebufferWidth(),
-                                 mc.getWindow().getFramebufferHeight());
+            int fwMin = Math.min(mc.getWindow().getWidth(),
+                                 mc.getWindow().getHeight());
             double scaleMultiplier = fwMin <= 1080 ? 1.0 : fwMin / 1080.0;
             float arrowScale = (float) Math.max(0.2, Math.min(2.0,
                     scaleMultiplier / Math.max(1, screenScale)));
@@ -182,7 +182,7 @@ public abstract class MixinGuiMap {
 
     /**
      * Draws Xaero's own arrow sprite (from assets/xaeroworldmap/gui/gui.png) via
-     * DrawContext so it composites on top of the squaremap deferred tile batch.
+     * GuiGraphicsExtractor so it composites on top of the squaremap deferred tile batch.
      *
      * UV in the 256×256 sheet: origin (13, 5), size 26×28.
      * Xaero centers it by drawing at screen position (−13, −5) in local space.
@@ -190,10 +190,10 @@ public abstract class MixinGuiMap {
      *
      * @param color ARGB tint — 0xFFFF1414 for the red arrow, 0xE5000000 for shadow.
      */
-    private static final Identifier XAERO_GUI = Identifier.of("xaeroworldmap", "gui/gui.png");
+    private static final Identifier XAERO_GUI = Identifier.fromNamespaceAndPath("xaeroworldmap", "gui/gui.png");
 
-    private static void drawXaeroArrowSprite(DrawContext ctx, int color) {
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, XAERO_GUI,
+    private static void drawXaeroArrowSprite(GuiGraphicsExtractor ctx, int color) {
+        ctx.blit(RenderPipelines.GUI_TEXTURED, XAERO_GUI,
                 -13, -5,   // screen position (centers the 26-wide sprite at x=0)
                 0f, 0f,    // UV start in the 256×256 sheet (sprite is at top-left)
                 26, 28,    // sprite size
@@ -203,14 +203,14 @@ public abstract class MixinGuiMap {
 
     // ── Mouse click ───────────────────────────────────────────────────────────
 
-    @Inject(method = "method_25402", at = @At("HEAD"), remap = false, cancellable = true)
-    private void onMouseClicked(Click click, boolean bl,
+    @Inject(method = "mouseClicked", at = @At("HEAD"), remap = false, cancellable = true)
+    private void onMouseClicked(MouseButtonEvent click, boolean bl,
                                 CallbackInfoReturnable<Boolean> cir) {
         try {
             int button = click.buttonInfo().button();
-            MinecraftClient mc = MinecraftClient.getInstance();
-            int sw = mc.getWindow().getScaledWidth();
-            int sh = mc.getWindow().getScaledHeight();
+            Minecraft mc = Minecraft.getInstance();
+            int sw = mc.getWindow().getGuiScaledWidth();
+            int sh = mc.getWindow().getGuiScaledHeight();
 
             if (button == 0) {
                 TownSearchOverlay.ClickResult result =
@@ -271,8 +271,8 @@ public abstract class MixinGuiMap {
         }
     }
 
-    @Inject(method = "method_25404", at = @At("HEAD"), remap = false, cancellable = true)
-    private void onKeyPressed(KeyInput input,
+    @Inject(method = "keyPressed", at = @At("HEAD"), remap = false, cancellable = true)
+    private void onKeyPressed(KeyEvent input,
                               CallbackInfoReturnable<Boolean> cir) {
         try {
             TownSearchOverlay.ClickResult result = TownyMapMod.onTownSearchKeyPressed(input.key());
@@ -285,12 +285,12 @@ public abstract class MixinGuiMap {
         }
     }
 
-    @Inject(method = "method_25400", at = @At("HEAD"), remap = false, cancellable = true)
-    private void onCharTyped(CharInput input, CallbackInfoReturnable<Boolean> cir) {
+    @Inject(method = "charTyped", at = @At("HEAD"), remap = false, cancellable = true)
+    private void onCharTyped(CharacterEvent input, CallbackInfoReturnable<Boolean> cir) {
         try {
-            if (!input.isValidChar()) return;
+            if (!input.isAllowedChatCharacter()) return;
             boolean consumed = false;
-            String text = input.asString();
+            String text = input.codepointAsString();
             for (int i = 0; i < text.length(); i++) {
                 consumed |= TownyMapMod.onTownSearchCharTyped(text.charAt(i));
             }
@@ -324,9 +324,9 @@ public abstract class MixinGuiMap {
     }
 
     private static boolean isShiftDown() {
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) return false;
-        long handle = mc.getWindow().getHandle();
+        long handle = mc.getWindow().handle();
         return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
     }
@@ -353,7 +353,7 @@ public abstract class MixinGuiMap {
 
     private static void clearDepthForXaeroArrowIfAvailable() {
         try {
-            Object framebuffer = MinecraftClient.getInstance().getFramebuffer();
+            Object framebuffer = Minecraft.getInstance().getMainRenderTarget();
             Class<?> textureUtils = Class.forName("xaero.lib.client.graphics.util.TextureUtils");
             for (Method method : textureUtils.getMethods()) {
                 if (!"clearRenderTargetDepth".equals(method.getName()) || method.getParameterCount() != 2) continue;

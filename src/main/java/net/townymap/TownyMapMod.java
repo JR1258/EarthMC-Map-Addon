@@ -9,12 +9,12 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.ServerInfo;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
+import net.minecraft.world.level.Level;
 import net.townymap.api.EarthMcApiClient;
 import net.townymap.api.SquaremapApiClient;
 import net.townymap.command.TownyMapCommand;
@@ -158,7 +158,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    private static void onGameMessage(Text message, boolean overlay) {
+    private static void onGameMessage(Component message, boolean overlay) {
         if (apiClient == null || !isActiveOnCurrentServer() || message == null) return;
         PendingClaim pending = pendingClaim;
         if (pending == null) return;
@@ -203,9 +203,9 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static void rememberPendingClaim() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.getSession() == null) return;
-        String selfName = client.getSession().getUsername();
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.getUser() == null) return;
+        String selfName = client.getUser().getName();
         int chunkX = floorToChunk(client.player.getX());
         int chunkZ = floorToChunk(client.player.getZ());
 
@@ -222,7 +222,7 @@ public class TownyMapMod implements ClientModInitializer {
             if (data == null || data.townName().isBlank()) return;
             playerDetailsCache.put(townKey(selfName), data);
             playerDetailsCache.put(townKey(data.name()), data);
-            MinecraftClient mc = MinecraftClient.getInstance();
+            Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
                     PendingClaim pending = pendingClaim;
@@ -236,9 +236,9 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static void resolveAndAddOptimisticClaimChunk(int chunkX, int chunkZ) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getSession() == null || earthMcApi == null) return;
-        String selfName = client.getSession().getUsername();
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getUser() == null || earthMcApi == null) return;
+        String selfName = client.getUser().getName();
         EarthMcPlayerData cached = playerDetailsCache.get(townKey(selfName));
         if (cached != null && !cached.townName().isBlank()) {
             addOptimisticClaimChunk(chunkX, chunkZ, cached.townName());
@@ -248,7 +248,7 @@ public class TownyMapMod implements ClientModInitializer {
             if (data == null || data.townName().isBlank()) return;
             playerDetailsCache.put(townKey(selfName), data);
             playerDetailsCache.put(townKey(data.name()), data);
-            MinecraftClient mc = MinecraftClient.getInstance();
+            Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> addOptimisticClaimChunk(chunkX, chunkZ, data.townName()));
             }
@@ -331,7 +331,7 @@ public class TownyMapMod implements ClientModInitializer {
         config.squaremapBackgroundEnabled = !config.squaremapBackgroundEnabled;
         config.save();
         sendFeedback("Squaremap overlay: " + onOff(config.squaremapBackgroundEnabled),
-                config.squaremapBackgroundEnabled ? Formatting.GREEN : Formatting.RED);
+                config.squaremapBackgroundEnabled ? ChatFormatting.GREEN : ChatFormatting.RED);
     }
 
     public static void cycleBorderOverlayMode() {
@@ -339,7 +339,7 @@ public class TownyMapMod implements ClientModInitializer {
         config.borderOverlayMode = (config.borderOverlayMode + 1) % 3;
         config.save();
         sendFeedback("Borders: " + borderModeLabel(config.borderOverlayMode),
-                config.borderOverlayMode == 0 ? Formatting.RED : Formatting.GREEN);
+                config.borderOverlayMode == 0 ? ChatFormatting.RED : ChatFormatting.GREEN);
     }
 
     public static void cycleTownStatusOverlayMode() {
@@ -347,7 +347,7 @@ public class TownyMapMod implements ClientModInitializer {
         config.townStatusOverlayMode = (config.townStatusOverlayMode + 1) % 6;
         config.save();
         sendFeedback("Map mode: " + townStatusModeLabel(config.townStatusOverlayMode),
-                config.townStatusOverlayMode == 0 ? Formatting.RED : Formatting.GREEN);
+                config.townStatusOverlayMode == 0 ? ChatFormatting.RED : ChatFormatting.GREEN);
     }
 
     public static void toggleChunkCounter() {
@@ -363,13 +363,13 @@ public class TownyMapMod implements ClientModInitializer {
         }
         config.save();
         sendFeedback("Chunk counter: " + ChunkCounterOverlay.toolbarLabel(config),
-                config.chunkCounterEnabled ? Formatting.GREEN : Formatting.RED);
+                config.chunkCounterEnabled ? ChatFormatting.GREEN : ChatFormatting.RED);
     }
 
     public static void refreshTownClaimsFromKeybind() {
         if (!canUseKeybindAction()) return;
         forceRefreshTownClaims();
-        sendFeedback("Refreshing towns and claims from squaremap...", Formatting.WHITE);
+        sendFeedback("Refreshing towns and claims from squaremap...", ChatFormatting.WHITE);
     }
 
     private static boolean canUseKeybindAction() {
@@ -400,7 +400,7 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     public static void onTownMarkersUpdated() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) {
             pruneOptimisticClaimChunks(true);
             invalidateTownRenderCaches();
@@ -470,7 +470,7 @@ public class TownyMapMod implements ClientModInitializer {
     /**
      * Called by MixinGuiMap every frame while Xaero's WorldMap is open.
      */
-    public static void renderSquaremapBackground(DrawContext ctx,
+    public static void renderSquaremapBackground(GuiGraphicsExtractor ctx,
                                                  double cameraX, double cameraZ,
                                                  double scale, int screenW, int screenH) {
         if (!isActiveOnCurrentServer()) return;
@@ -480,7 +480,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderOnWorldMap(DrawContext ctx,
+    public static void renderOnWorldMap(GuiGraphicsExtractor ctx,
                                         double cameraX, double cameraZ,
                                         double scale, int screenW, int screenH) {
         if (!isActiveOnCurrentServer()) return;
@@ -524,7 +524,7 @@ public class TownyMapMod implements ClientModInitializer {
         return System.currentTimeMillis() < worldMapMovingUntilMs;
     }
 
-    public static void renderHoveredWorldMapChunk(DrawContext ctx,
+    public static void renderHoveredWorldMapChunk(GuiGraphicsExtractor ctx,
                                                   double cameraX, double cameraZ,
                                                   double scale, int screenW, int screenH,
                                                   double worldX, double worldZ) {
@@ -534,7 +534,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderSquaremapMinimapViewport(DrawContext ctx,
+    public static void renderSquaremapMinimapViewport(GuiGraphicsExtractor ctx,
                                                       double cameraX, double cameraZ,
                                                       double scale, int width, int height) {
         if (!isActiveOnCurrentServer()) return;
@@ -543,7 +543,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderChunkCounter(DrawContext ctx,
+    public static void renderChunkCounter(GuiGraphicsExtractor ctx,
                                           double cameraX, double cameraZ,
                                           double scale, int screenW, int screenH,
                                           double worldX, double worldZ) {
@@ -555,7 +555,7 @@ public class TownyMapMod implements ClientModInitializer {
                 config.chunkCounterEnabled);
     }
 
-    public static void renderMapToggles(DrawContext ctx, int screenH) {
+    public static void renderMapToggles(GuiGraphicsExtractor ctx, int screenH) {
         if (!isActiveOnCurrentServer()) return;
         if (config != null) {
             MapToggleOverlay.render(ctx, screenH, config,
@@ -581,9 +581,9 @@ public class TownyMapMod implements ClientModInitializer {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getSession() == null) return;
-        String selfName = client.getSession().getUsername();
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getUser() == null) return;
+        String selfName = client.getUser().getName();
 
         Set<String> currentlyVisibleWilderness = new HashSet<>();
         for (var marker : apiClient.getPlayers()) {
@@ -608,7 +608,7 @@ public class TownyMapMod implements ClientModInitializer {
      * Only renders when the squaremap background is active and the minimap is enlarged.
      * Must be called AFTER {@code renderOutsidePip} so it composites on top.
      */
-    public static void renderMinimapPlayerIndicator(DrawContext ctx, Object session, int mapX, int mapY, int size) {
+    public static void renderMinimapPlayerIndicator(GuiGraphicsExtractor ctx, Object session, int mapX, int mapY, int size) {
         if (!isActiveOnCurrentServer()) return;
         try {
             TownyMinimapOverlay.renderPlayerIndicator(ctx,
@@ -647,7 +647,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderMinimapCompassDirections(DrawContext ctx, Object session, int mapX, int mapY, int size) {
+    public static void renderMinimapCompassDirections(GuiGraphicsExtractor ctx, Object session, int mapX, int mapY, int size) {
         if (!isActiveOnCurrentServer()) return;
         try {
             TownyMinimapOverlay.renderCompassDirections(ctx,
@@ -657,7 +657,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderMinimapNationAlert(DrawContext ctx, int x, int y, int size) {
+    public static void renderMinimapNationAlert(GuiGraphicsExtractor ctx, int x, int y, int size) {
         if (!isActiveOnCurrentServer()) return;
         if (config == null || !config.minimapNationAlertEnabled) return;
         long remaining = minimapNationAlertFlashUntilMs - System.currentTimeMillis();
@@ -673,7 +673,7 @@ public class TownyMapMod implements ClientModInitializer {
         ctx.fill(x + size - thickness, y, x + size, y + size, color);
     }
 
-    public static void renderMinimapWaypointsOnTop(DrawContext ctx, Object session, int mapX, int mapY, int size) {
+    public static void renderMinimapWaypointsOnTop(GuiGraphicsExtractor ctx, Object session, int mapX, int mapY, int size) {
         if (!isActiveOnCurrentServer()) return;
         try {
             TownyMinimapOverlay.renderWaypointsOnTop(ctx,
@@ -683,7 +683,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderMinimapFrame(DrawContext ctx, Object session, int x, int y, int size) {
+    public static void renderMinimapFrame(GuiGraphicsExtractor ctx, Object session, int x, int y, int size) {
         if (!isActiveOnCurrentServer()) return;
         if (config == null || !config.minimapExtensionsEnabled || !config.squaremapBackgroundEnabled) return;
         if (size <= 8) return;
@@ -740,10 +740,10 @@ public class TownyMapMod implements ClientModInitializer {
     public static boolean shouldHideMinimap() {
         if (!isActiveOnCurrentServer()) return false;
         if (config == null || !config.hideMinimapInNether) return false;
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         return client != null
-                && client.world != null
-                && client.world.getRegistryKey() == World.NETHER;
+                && client.level != null
+                && client.level.dimension() == Level.NETHER;
     }
 
     public static int playerDotColor(String playerName) {
@@ -759,9 +759,9 @@ public class TownyMapMod implements ClientModInitializer {
         if (!isActiveOnCurrentServer() || config == null || !config.playersEnabled) return 0;
         if (earthMcApi == null || playerName == null || playerName.isBlank()) return 0xFFFFFFFF;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getSession() == null) return 0xFFFFFFFF;
-        String selfName = client.getSession().getUsername();
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getUser() == null) return 0xFFFFFFFF;
+        String selfName = client.getUser().getName();
         if (playerName.equalsIgnoreCase(selfName)) return 0;
 
         EarthMcPlayerData self = playerDetailsCache.get(sessionSelfKey(selfName));
@@ -812,7 +812,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (requestPlayerDetails(name)) minimapPlayerDetailRequests++;
     }
 
-    public static void renderOnMinimap(DrawContext ctx, Object session, int x, int y, int size) {
+    public static void renderOnMinimap(GuiGraphicsExtractor ctx, Object session, int x, int y, int size) {
         if (!isActiveOnCurrentServer()) return;
         try {
             TownyMinimapOverlay.render(ctx,
@@ -823,7 +823,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderTownSearch(DrawContext ctx, int screenW, int screenH) {
+    public static void renderTownSearch(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         if (!isActiveOnCurrentServer()) return;
         if (apiClient != null) {
             apiClient.tickWhileMapOpen();
@@ -836,7 +836,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void renderTownInfo(DrawContext ctx, int screenW, int screenH) {
+    public static void renderTownInfo(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         if (!isActiveOnCurrentServer()) return;
         TownPopupData data = TownInfoOverlay.currentData();
         if (data != null && data != TownPopupData.WILDERNESS && data.nationName() != null && !data.nationName().isBlank()) {
@@ -846,7 +846,7 @@ public class TownyMapMod implements ClientModInitializer {
                 data != null && isFavorite(data.townName()), nationDetailsCache);
     }
 
-    public static void renderTownHover(DrawContext ctx, int mouseX, int mouseY,
+    public static void renderTownHover(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
                                        double worldX, double worldZ, int screenW, int screenH) {
         if (!isActiveOnCurrentServer()) return;
         if (config != null && config.chunkCounterEnabled) return;
@@ -881,10 +881,10 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     public static void openConfigScreen() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
         // Pass the current screen (GuiMap) as parent so closing config returns to the map.
-        client.setScreen(new net.townymap.gui.TownyMapConfigScreen(client.currentScreen));
+        client.setScreen(new net.townymap.gui.TownyMapConfigScreen(client.screen));
     }
 
     public static TownSearchOverlay.ClickResult onTownSearchClick(double mouseX, double mouseY,
@@ -946,7 +946,7 @@ public class TownyMapMod implements ClientModInitializer {
         TownPopupData cachedFallback = fallback;
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
         earthMcApi.fetchTownAt(worldX, worldZ).thenAccept(data -> {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             if (client == null) return;
             client.execute(() -> {
                 if (lookupId != townLookupId.get()) return;
@@ -965,14 +965,14 @@ public class TownyMapMod implements ClientModInitializer {
     public static boolean isActiveOnCurrentServer() {
         if (config == null) return false;
         if (!config.earthmcOnly) return true;
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return false;
-        ServerInfo server = client.getCurrentServerEntry();
-        if (server == null || server.address == null) return false;
+        ServerData server = client.getCurrentServer();
+        if (server == null || server.ip == null) return false;
         // Cache the toLowerCase().contains() result per server address.  This is
         // called once per online player per frame (playerDotColor), so the string
         // allocation is hot; recompute only when the address actually changes.
-        String address = server.address;
+        String address = server.ip;
         if (!address.equals(activeServerAddress)) {
             activeServerAddress = address;
             activeServerResult = address.toLowerCase(Locale.ROOT).contains("earthmc.net");
@@ -1018,24 +1018,24 @@ public class TownyMapMod implements ClientModInitializer {
         try {
             boolean created = XaeroWaypointBridge.createRouteWaypoint(target);
             if (created) {
-                sendFeedback("Xaero route set to " + target.label() + ".", Formatting.GREEN);
+                sendFeedback("Xaero route set to " + target.label() + ".", ChatFormatting.GREEN);
             } else {
-                sendFeedback("Could not create a Xaero route here.", Formatting.RED);
+                sendFeedback("Could not create a Xaero route here.", ChatFormatting.RED);
             }
             return created;
         } catch (RuntimeException | LinkageError e) {
             LOGGER.warn("[TownyMap] Failed to create Xaero route waypoint", e);
-            sendFeedback("Xaero route creation failed.", Formatting.RED);
+            sendFeedback("Xaero route creation failed.", ChatFormatting.RED);
             return false;
         }
     }
 
-    private static void sendFeedback(String message, Formatting color) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    private static void sendFeedback(String message, ChatFormatting color) {
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return;
-        client.player.sendMessage(Text.literal("[TownyMap] ")
-                .formatted(Formatting.GOLD)
-                .append(Text.literal(message).formatted(color)), false);
+        client.player.sendSystemMessage(Component.literal("[TownyMap] ")
+                .withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(message).withStyle(color)));
     }
 
     private static void requestTownDetails(String townName, String key) {
@@ -1365,7 +1365,7 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     public static void requestMinimapTownHighlightRefresh() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
         client.execute(() -> {
             try {

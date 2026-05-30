@@ -1,8 +1,8 @@
 package net.townymap.gui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 import org.lwjgl.glfw.GLFW;
@@ -206,9 +206,9 @@ public final class ChunkCounterOverlay {
     }
 
     public static void tickDrag(double worldX, double worldZ) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.getWindow() == null) return;
-        long handle = client.getWindow().getHandle();
+        long handle = client.getWindow().handle();
         if (GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
             long key = key(floorToChunk(worldX), floorToChunk(worldZ));
             if (key != lastRightDownKey) {
@@ -229,7 +229,7 @@ public final class ChunkCounterOverlay {
         if (persistDirty) persistSelectionNow();
     }
 
-    public static void render(DrawContext ctx, double cameraX, double cameraZ, double blockScale,
+    public static void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale,
                               int sw, int sh, double mouseWorldX, double mouseWorldZ, boolean preview) {
         if (blockScale <= 0) return;
         TownyMapConfig config = TownyMapMod.getConfig();
@@ -248,7 +248,7 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    public static void renderWorldSpace(DrawContext ctx) {
+    public static void renderWorldSpace(GuiGraphicsExtractor ctx) {
         TownyMapConfig config = TownyMapMod.getConfig();
         if (config == null || !config.chunkCounterEnabled) return;
         int groupCount = visibleGroupCount(config);
@@ -258,7 +258,7 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    public static void renderMinimapLabels(DrawContext ctx, MinecraftClient client,
+    public static void renderMinimapLabels(GuiGraphicsExtractor ctx, Minecraft client,
                                            int mapX, int mapY, int size,
                                            double playerX, double playerZ,
                                            double pixelsPerBlock, double sin, double cos,
@@ -272,7 +272,7 @@ public final class ChunkCounterOverlay {
         try {
             int groupCount = visibleGroupCount(config);
             for (int i = 0; i < groupCount; i++) {
-                drawMinimapLabelsForSelection(ctx, client.textRenderer, GROUPS.get(i), GROUP_LABELS[i],
+                drawMinimapLabelsForSelection(ctx, client.font, GROUPS.get(i), GROUP_LABELS[i],
                         centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos,
                         clipLeft, clipTop, clipRight, clipBottom);
             }
@@ -296,7 +296,7 @@ public final class ChunkCounterOverlay {
         return groups;
     }
 
-    private static void drawSelection(DrawContext ctx, SelectionState selection,
+    private static void drawSelection(GuiGraphicsExtractor ctx, SelectionState selection,
                                       double cameraX, double cameraZ, double blockScale,
                                       int sw, int sh, boolean active) {
         selection.ensureBuilt();
@@ -314,7 +314,7 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    private static void drawLowZoomSelection(DrawContext ctx, SelectionState selection,
+    private static void drawLowZoomSelection(GuiGraphicsExtractor ctx, SelectionState selection,
                                              double cameraX, double cameraZ, double blockScale,
                                              int sw, int sh, boolean active) {
         int fill = argb(active ? 0x58 : 0x38, selection.rgb);
@@ -327,7 +327,7 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    private static void drawLowZoomRectFill(DrawContext ctx, LowZoomRect rect,
+    private static void drawLowZoomRectFill(GuiGraphicsExtractor ctx, LowZoomRect rect,
                                             double cameraX, double cameraZ, double blockScale,
                                             int sw, int sh, int color) {
         int left = (int) Math.round(screenX(rect.minChunkX * CHUNK_SIZE, cameraX, blockScale, sw));
@@ -351,7 +351,7 @@ public final class ChunkCounterOverlay {
         ctx.fill(Math.max(0, left), Math.max(0, top), Math.min(sw, right), Math.min(sh, bottom), color);
     }
 
-    private static void drawLowZoomEdge(DrawContext ctx, Edge edge,
+    private static void drawLowZoomEdge(GuiGraphicsExtractor ctx, Edge edge,
                                         double cameraX, double cameraZ, double blockScale,
                                         int sw, int sh, int color) {
         double blockX = edge.chunkX * CHUNK_SIZE;
@@ -399,7 +399,7 @@ public final class ChunkCounterOverlay {
         ctx.fill(Math.max(0, left), Math.max(0, top), Math.min(sw, right), Math.min(sh, bottom), color);
     }
 
-    private static void drawSelectionWorldSpace(DrawContext ctx, SelectionState selection, boolean active) {
+    private static void drawSelectionWorldSpace(GuiGraphicsExtractor ctx, SelectionState selection, boolean active) {
         selection.ensureBuilt();
         int fill = argb(active ? 0x42 : 0x2B, selection.rgb);
         int border = argb(active ? 0xE8 : 0xA0, selection.rgb);
@@ -422,20 +422,20 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    private static void drawRegionLabels(DrawContext ctx,
+    private static void drawRegionLabels(GuiGraphicsExtractor ctx,
                                          double cameraX, double cameraZ, double blockScale,
                                          int sw, int sh, TownyMapConfig config) {
         if (CHUNK_SIZE * blockScale < LABEL_MIN_CHUNK_PIXELS) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.textRenderer == null) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) return;
         int groupCount = visibleGroupCount(config);
         for (int i = 0; i < groupCount; i++) {
-            drawLabelsForSelection(ctx, client.textRenderer, GROUPS.get(i), GROUP_LABELS[i],
+            drawLabelsForSelection(ctx, client.font, GROUPS.get(i), GROUP_LABELS[i],
                     cameraX, cameraZ, blockScale, sw, sh);
         }
     }
 
-    private static void drawLabelsForSelection(DrawContext ctx, TextRenderer tr, SelectionState selection,
+    private static void drawLabelsForSelection(GuiGraphicsExtractor ctx, Font tr, SelectionState selection,
                                                String prefix, double cameraX, double cameraZ,
                                                double blockScale, int sw, int sh) {
         selection.ensureBuilt();
@@ -448,7 +448,7 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    private static void drawMinimapLabelsForSelection(DrawContext ctx, TextRenderer tr, SelectionState selection,
+    private static void drawMinimapLabelsForSelection(GuiGraphicsExtractor ctx, Font tr, SelectionState selection,
                                                       String prefix, double centerX, double centerY,
                                                       double playerX, double playerZ, double pixelsPerBlock,
                                                       double sin, double cos,
@@ -465,15 +465,15 @@ public final class ChunkCounterOverlay {
         }
     }
 
-    private static void drawLabel(DrawContext ctx, TextRenderer tr, String text, int centerX, int centerY, int rgb) {
-        int width = tr.getWidth(text);
+    private static void drawLabel(GuiGraphicsExtractor ctx, Font tr, String text, int centerX, int centerY, int rgb) {
+        int width = tr.width(text);
         int x = centerX - width / 2;
-        int y = centerY - tr.fontHeight / 2;
-        ctx.drawText(tr, text, x + 1, y + 1, 0xCC000000, false);
-        ctx.drawText(tr, text, x, y, 0xFFFFFFFF, false);
+        int y = centerY - tr.lineHeight / 2;
+        ctx.text(tr, text, x + 1, y + 1, 0xCC000000, false);
+        ctx.text(tr, text, x, y, 0xFFFFFFFF, false);
     }
 
-    private static void drawOverlapBadges(DrawContext ctx, double cameraX, double cameraZ,
+    private static void drawOverlapBadges(GuiGraphicsExtractor ctx, double cameraX, double cameraZ,
                                           double blockScale, int sw, int sh) {
         if (blockScale <= 0.8) return;
         Set<Long> seen = new HashSet<>();
@@ -638,7 +638,7 @@ public final class ChunkCounterOverlay {
         if (changed) persistDirty = true;
     }
 
-    private static void drawChunk(DrawContext ctx, int chunkX, int chunkZ,
+    private static void drawChunk(GuiGraphicsExtractor ctx, int chunkX, int chunkZ,
                                   double cameraX, double cameraZ, double blockScale,
                                   int sw, int sh, int fill, int border, boolean outline) {
         int x1 = toScreenX(chunkX * CHUNK_SIZE, cameraX, blockScale, sw);
@@ -661,7 +661,7 @@ public final class ChunkCounterOverlay {
         ctx.fill(right - 1, top, right, bottom, border);
     }
 
-    private static void drawEdge(DrawContext ctx, int chunkX, int chunkZ, int side,
+    private static void drawEdge(GuiGraphicsExtractor ctx, int chunkX, int chunkZ, int side,
                                  double cameraX, double cameraZ, double blockScale,
                                  int sw, int sh, int color) {
         int left = toScreenX(chunkX * CHUNK_SIZE, cameraX, blockScale, sw);

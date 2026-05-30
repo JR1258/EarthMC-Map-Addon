@@ -1,11 +1,11 @@
 package net.townymap.gui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 import net.townymap.model.EarthMcNationData;
 import net.townymap.model.TownPopupData;
@@ -21,7 +21,7 @@ import java.util.Map;
  * Statically-held popup shown when the player right-clicks a town on the WorldMap.
  *
  * Uses plain String + Minecraft formatting codes (§) for text rather than Text objects,
- * because the String path of DrawContext.drawText() is guaranteed to work in the
+ * because the String path of GuiGraphicsExtractor.text() is guaranteed to work in the
  * same GL state as border/player-dot rendering (renderPreDropdown HEAD).
  */
 public final class TownInfoOverlay {
@@ -81,7 +81,7 @@ public final class TownInfoOverlay {
         return loading ? null : currentData;
     }
 
-    public static void render(DrawContext ctx, int sw, int sh, boolean favorite,
+    public static void render(GuiGraphicsExtractor ctx, int sw, int sh, boolean favorite,
                               Map<String, EarthMcNationData> nationDetails) {
         infoLinks.clear();
         if (!loading && currentData == null) return;
@@ -90,8 +90,8 @@ public final class TownInfoOverlay {
             return;
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        TextRenderer tr = mc.textRenderer;
+        Minecraft mc = Minecraft.getInstance();
+        Font tr = mc.font;
 
         List<InfoRow> lines = buildLines(nationDetails);
         if (lines.isEmpty()) return;
@@ -134,15 +134,15 @@ public final class TownInfoOverlay {
         int ty = by + PADDING;
         for (InfoRow row : lines) {
             int px = bx + horizontalPadding;
-            ctx.drawText(tr, row.prefix(), px, ty, 0xFFFFFFFF, true);
+            ctx.text(tr, row.prefix(), px, ty, 0xFFFFFFFF, true);
             if (row.hasLink()) {
-                int nameX = px + tr.getWidth(row.prefix());
-                int nameW = tr.getWidth(row.name());
+                int nameX = px + tr.width(row.prefix());
+                int nameW = tr.width(row.name());
                 boolean hover = mx >= nameX && mx <= nameX + nameW && my >= ty - 1 && my <= ty + 11;
-                ctx.drawText(tr, row.name(), nameX, ty, hover ? LINK_HOVER_COLOR : LINK_COLOR, true);
+                ctx.text(tr, row.name(), nameX, ty, hover ? LINK_HOVER_COLOR : LINK_COLOR, true);
                 infoLinks.add(new InfoLink(nameX, ty - 1, nameW, 12, row.linkType(), row.name()));
                 if (!row.suffix().isEmpty()) {
-                    ctx.drawText(tr, row.suffix(), nameX + nameW, ty, 0xFFFFFFFF, true);
+                    ctx.text(tr, row.suffix(), nameX + nameW, ty, 0xFFFFFFFF, true);
                 }
             }
             ty += LINE_HEIGHT;
@@ -154,9 +154,9 @@ public final class TownInfoOverlay {
         }
     }
 
-    private static int rowWidth(TextRenderer tr, InfoRow row) {
-        int w = tr.getWidth(row.prefix());
-        if (row.hasLink()) w += tr.getWidth(row.name()) + tr.getWidth(row.suffix());
+    private static int rowWidth(Font tr, InfoRow row) {
+        int w = tr.width(row.prefix());
+        if (row.hasLink()) w += tr.width(row.name()) + tr.width(row.suffix());
         return w;
     }
 
@@ -270,7 +270,7 @@ public final class TownInfoOverlay {
         return s.replaceAll("§.", "");
     }
 
-    private static void drawFavoriteStar(DrawContext ctx, TextRenderer tr, int bx, int by, int boxW, boolean favorite) {
+    private static void drawFavoriteStar(GuiGraphicsExtractor ctx, Font tr, int bx, int by, int boxW, boolean favorite) {
         favoriteX1 = bx + boxW - PADDING - STAR_HITBOX + 2;
         favoriteY1 = by + PADDING - 4;
         favoriteX2 = favoriteX1 + STAR_HITBOX;
@@ -278,13 +278,13 @@ public final class TownInfoOverlay {
 
         String star = favorite ? "★" : "☆";
         int color = favorite ? 0xFFFFE066 : 0xFFE5E7EB;
-        int textX = favoriteX1 + (STAR_HITBOX - tr.getWidth(star)) / 2;
+        int textX = favoriteX1 + (STAR_HITBOX - tr.width(star)) / 2;
         int textY = favoriteY1 + 4;
-        ctx.drawText(tr, star, textX + 1, textY + 1, 0xCC000000, false);
-        ctx.drawText(tr, star, textX, textY, color, false);
+        ctx.text(tr, star, textX + 1, textY + 1, 0xCC000000, false);
+        ctx.text(tr, star, textX, textY, color, false);
     }
 
-    private static void drawButtons(DrawContext ctx, TextRenderer tr, int bx, int by, int boxW) {
+    private static void drawButtons(GuiGraphicsExtractor ctx, Font tr, int bx, int by, int boxW) {
         int gap = 6;
         int available = boxW - PADDING * 2;
         int buttonW = Math.max(52, Math.min(82, (available - gap) / 2));
@@ -303,13 +303,13 @@ public final class TownInfoOverlay {
         drawButton(ctx, tr, routeX1, routeY1, routeX2, routeY2, "Route", true);
     }
 
-    private static void drawButton(DrawContext ctx, TextRenderer tr, int x1, int y1, int x2, int y2,
+    private static void drawButton(GuiGraphicsExtractor ctx, Font tr, int x1, int y1, int x2, int y2,
                                    String label, boolean active) {
-        ButtonWidget button = ButtonWidget.builder(coloredText(label, active ? 0xFFFFFF : 0x777777), ignored -> {})
-                .dimensions(x1, y1, x2 - x1, y2 - y1)
+        Button button = Button.builder(coloredText(label, active ? 0xFFFFFF : 0x777777), ignored -> {})
+                .bounds(x1, y1, x2 - x1, y2 - y1)
                 .build();
         button.active = active;
-        button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+        button.extractRenderState(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
     }
 
     private static String normalizeDiscordUrl(String discord) {
@@ -319,23 +319,23 @@ public final class TownInfoOverlay {
     public static void openDiscord(String url) {
         if (url == null || url.isBlank()) return;
         try {
-            Util.getOperatingSystem().open(URI.create(url));
+            Util.getPlatform().openUri(URI.create(url));
         } catch (Exception ignored) {
         }
     }
 
-    private static Text coloredText(String label, int textColor) {
-        return Text.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
+    private static Component coloredText(String label, int textColor) {
+        return Component.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
     }
 
     private static int scaledMouseX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledXPos(mc.getWindow()));
     }
 
     private static int scaledMouseY() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledYPos(mc.getWindow()));
     }
 
     private static boolean inside(double mouseX, double mouseY, int x1, int y1, int x2, int y2) {

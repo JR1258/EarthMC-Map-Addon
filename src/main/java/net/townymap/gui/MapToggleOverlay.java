@@ -1,11 +1,11 @@
 package net.townymap.gui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
 import net.townymap.TownyMapConfig;
 
 public final class MapToggleOverlay {
@@ -26,9 +26,9 @@ public final class MapToggleOverlay {
 
     private MapToggleOverlay() {}
 
-    public static void render(DrawContext ctx, int sh, TownyMapConfig config,
+    public static void render(GuiGraphicsExtractor ctx, int sh, TownyMapConfig config,
                               boolean squaremapLoading, boolean bordersLoading) {
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
         int y = togglesTop(sh);
 
         drawToggle(ctx, tr, 0, y, squaremapLoading ? "EMC..." : "EMC", config.squaremapBackgroundEnabled);
@@ -100,7 +100,7 @@ public final class MapToggleOverlay {
         return mouseY >= sy && mouseY <= sy + HEIGHT;
     }
 
-    private static void drawToggle(DrawContext ctx, TextRenderer tr, int row, int baseY,
+    private static void drawToggle(GuiGraphicsExtractor ctx, Font tr, int row, int baseY,
                                    String name, boolean enabled) {
         int x = LEFT;
         int y = baseY + row * (HEIGHT + GAP);
@@ -111,7 +111,7 @@ public final class MapToggleOverlay {
         ctx.fill(x + 2, y + 3, x + 5, y + HEIGHT - 3, enabled ? 0xFF67D76B : 0xFF606060);
     }
 
-    private static void drawMode(DrawContext ctx, TextRenderer tr, int row, int baseY,
+    private static void drawMode(GuiGraphicsExtractor ctx, Font tr, int row, int baseY,
                                  String name, String mode, boolean enabled) {
         int x = LEFT;
         int y = baseY + row * (HEIGHT + GAP);
@@ -140,18 +140,18 @@ public final class MapToggleOverlay {
         return togglesTop(sh) + TOGGLE_ROWS * (HEIGHT + GAP) + SETTINGS_GAP;
     }
 
-    private static void drawSettingsButton(DrawContext ctx, TextRenderer tr, int y) {
+    private static void drawSettingsButton(GuiGraphicsExtractor ctx, Font tr, int y) {
         String label = "⚙ Settings";
         drawTexturedButton(ctx, LEFT, y, WIDTH, HEIGHT, label, true, 0xFFCCCCCC);
     }
 
-    private static void drawCounterResetButton(DrawContext ctx, TextRenderer tr, int baseY) {
+    private static void drawCounterResetButton(GuiGraphicsExtractor ctx, Font tr, int baseY) {
         int x = LEFT + WIDTH + RESET_GAP;
         int y = baseY + 4 * (HEIGHT + GAP);
         drawTexturedButton(ctx, x, y, RESET_WIDTH, HEIGHT, "Reset", true, 0xFFFF5555);
     }
 
-    private static void drawCounterGroupButtons(DrawContext ctx, TextRenderer tr, TownyMapConfig config) {
+    private static void drawCounterGroupButtons(GuiGraphicsExtractor ctx, Font tr, TownyMapConfig config) {
         int y = GROUP_TOP;
         int x = counterGroupsX();
         int visibleGroups = ChunkCounterOverlay.visibleGroupCount(config);
@@ -202,27 +202,27 @@ public final class MapToggleOverlay {
         return GROUP_LEFT;
     }
 
-    private static void drawTexturedButton(DrawContext ctx, int x, int y, int w, int h,
+    private static void drawTexturedButton(GuiGraphicsExtractor ctx, int x, int y, int w, int h,
                                            String label, boolean active, int textColor) {
-        ButtonWidget button = ButtonWidget.builder(coloredText(label, textColor), ignored -> {})
-                .dimensions(x, y, w, h)
+        Button button = Button.builder(coloredText(label, textColor), ignored -> {})
+                .bounds(x, y, w, h)
                 .build();
         button.active = active;
-        button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+        button.extractRenderState(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
     }
 
-    private static Text coloredText(String label, int textColor) {
-        return Text.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
+    private static Component coloredText(String label, int textColor) {
+        return Component.literal(label).setStyle(Style.EMPTY.withColor(textColor & 0xFFFFFF));
     }
 
     private static int scaledMouseX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledXPos(mc.getWindow()));
     }
 
     private static int scaledMouseY() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        return (int) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.getScaledYPos(mc.getWindow()));
     }
 
     private static String borderModeLabel(int mode) {

@@ -4,12 +4,12 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.AddressMode;
 import com.mojang.blaze3d.textures.FilterMode;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
 import net.townymap.TownyMapConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,21 +70,21 @@ final class SquaremapTileRenderer {
                 .build();
     }
 
-    void render(DrawContext ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
+    void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
                 double worldLeft, double worldRight, double worldTop, double worldBottom,
                 boolean moving) {
         render(ctx, cameraX, cameraZ, blockScale, sw, sh, worldLeft, worldRight, worldTop, worldBottom,
                 moving, NetworkPolicy.WORLD_MAP);
     }
 
-    void renderMinimap(DrawContext ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
+    void renderMinimap(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
                        double worldLeft, double worldRight, double worldTop, double worldBottom,
                        boolean moving) {
         render(ctx, cameraX, cameraZ, blockScale, sw, sh, worldLeft, worldRight, worldTop, worldBottom,
                 moving, NetworkPolicy.WORLD_MAP);
     }
 
-    private void render(DrawContext ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
+    private void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
                         double worldLeft, double worldRight, double worldTop, double worldBottom,
                         boolean moving, NetworkPolicy policy) {
         int zoom = chooseTileZoom(blockScale);
@@ -136,7 +136,7 @@ final class SquaremapTileRenderer {
         return new PanDirection(panDirectionX, panDirectionZ);
     }
 
-    private void renderLayer(DrawContext ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
+    private void renderLayer(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
                              double worldLeft, double worldRight, double worldTop, double worldBottom,
                              int zoom, boolean moving, boolean fallbackLayer, NetworkPolicy policy) {
         double pixelsPerBlock = pixelsPerBlock(zoom);
@@ -253,7 +253,7 @@ final class SquaremapTileRenderer {
         }
     }
 
-    private boolean renderParentFallback(DrawContext ctx, TileKey childKey, double childTileWorldSize,
+    private boolean renderParentFallback(GuiGraphicsExtractor ctx, TileKey childKey, double childTileWorldSize,
                                          double cameraX, double cameraZ, double blockScale,
                                          int sw, int sh) {
         for (int parentZoom = childKey.zoom() - 1; parentZoom >= 0; parentZoom--) {
@@ -276,7 +276,7 @@ final class SquaremapTileRenderer {
         return false;
     }
 
-    private void renderTile(DrawContext ctx, Identifier texture, int tileX, int tileY,
+    private void renderTile(GuiGraphicsExtractor ctx, Identifier texture, int tileX, int tileY,
                             double tileWorldSize, double cameraX, double cameraZ,
                             double blockScale, int sw, int sh) {
         double tileWorldX = tileX * tileWorldSize;
@@ -289,12 +289,12 @@ final class SquaremapTileRenderer {
         if (x2 <= 0 || x1 >= sw || y2 <= 0 || y1 >= sh) return;
         int drawW = Math.max(1, x2 - x1);
         int drawH = Math.max(1, y2 - y1);
-        ctx.drawTexture(PIPELINE, texture, x1, y1, 0.0F, 0.0F,
+        ctx.blit(PIPELINE, texture, x1, y1, 0.0F, 0.0F,
                 drawW, drawH,
                 TILE_PIXELS, TILE_PIXELS, TILE_PIXELS, TILE_PIXELS);
     }
 
-    private void renderTileRegion(DrawContext ctx, Identifier texture, int tileX, int tileY,
+    private void renderTileRegion(GuiGraphicsExtractor ctx, Identifier texture, int tileX, int tileY,
                                   double tileWorldSize, double cameraX, double cameraZ,
                                   double blockScale, int sw, int sh,
                                   int u, int v, int regionW, int regionH) {
@@ -308,7 +308,7 @@ final class SquaremapTileRenderer {
         if (x2 <= 0 || x1 >= sw || y2 <= 0 || y1 >= sh) return;
         int drawW = Math.max(1, x2 - x1);
         int drawH = Math.max(1, y2 - y1);
-        ctx.drawTexture(PIPELINE, texture, x1, y1, (float) u, (float) v,
+        ctx.blit(PIPELINE, texture, x1, y1, (float) u, (float) v,
                 drawW, drawH,
                 regionW, regionH, TILE_PIXELS, TILE_PIXELS);
     }
@@ -316,7 +316,7 @@ final class SquaremapTileRenderer {
     private void processCompletedTiles(boolean moving, int currentZoom,
                                        double worldLeft, double worldRight,
                                        double worldTop, double worldBottom) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
 
         int uploadLimit = moving ? MAX_MOVING_TEXTURE_UPLOADS_PER_FRAME : MAX_TEXTURE_UPLOADS_PER_FRAME;
@@ -330,15 +330,15 @@ final class SquaremapTileRenderer {
             if (!completedTiles.remove(loaded.key(), loaded)) continue;
             try {
                 TileKey key = loaded.key();
-                Identifier id = Identifier.of("townymapaddon",
+                Identifier id = Identifier.fromNamespaceAndPath("townymapaddon",
                         "squaremap/" + key.zoom + "/" + key.x + "_" + key.y);
                 Identifier old = textures.remove(key);
                 if (old != null) {
-                    client.getTextureManager().destroyTexture(old);
+                    client.getTextureManager().release(old);
                 }
-                NativeImageBackedTexture texture =
+                DynamicTexture texture =
                         new SmoothTileTexture(() -> "TownyMap squaremap tile " + key, loaded.image());
-                client.getTextureManager().registerTexture(id, texture);
+                client.getTextureManager().register(id, texture);
                 textures.put(key, id);
                 textureLoadedAt.put(key, System.currentTimeMillis());
                 failedAt.remove(key);
@@ -437,10 +437,10 @@ final class SquaremapTileRenderer {
         requestTile(key, true, maxConcurrentLoads);
     }
 
-    private void evictOldTextures(MinecraftClient client) {
+    private void evictOldTextures(Minecraft client) {
         while (textures.size() > MAX_TEXTURES) {
             Map.Entry<TileKey, Identifier> eldest = textures.entrySet().iterator().next();
-            client.getTextureManager().destroyTexture(eldest.getValue());
+            client.getTextureManager().release(eldest.getValue());
             textures.remove(eldest.getKey());
             textureLoadedAt.remove(eldest.getKey());
         }
@@ -511,10 +511,10 @@ final class SquaremapTileRenderer {
         }
     }
 
-    private static final class SmoothTileTexture extends NativeImageBackedTexture {
+    private static final class SmoothTileTexture extends DynamicTexture {
         private SmoothTileTexture(java.util.function.Supplier<String> name, NativeImage image) {
             super(name, image);
-            this.sampler = RenderSystem.getSamplerCache().get(
+            this.sampler = RenderSystem.getSamplerCache().getSampler(
                     AddressMode.CLAMP_TO_EDGE,
                     AddressMode.CLAMP_TO_EDGE,
                     FilterMode.LINEAR,

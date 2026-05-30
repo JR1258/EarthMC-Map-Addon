@@ -1,6 +1,6 @@
 package net.townymap.mixin;
 
-import net.minecraft.client.util.math.MatrixStack;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.townymap.TownyMapMod;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -53,12 +53,12 @@ public abstract class MixinCommonMinimapRenderer {
     }
 
     @Inject(
-            method = "renderCompass(Lnet/minecraft/class_4587;Lxaero/common/settings/ModSettings;Lxaero/lib/client/config/ClientConfigManager;Lxaero/lib/client/graphics/XaeroBufferProvider;IIIDDZF)V",
+            method = "renderCompass(Lcom/mojang/blaze3d/vertex/PoseStack;Lxaero/common/settings/ModSettings;Lxaero/lib/client/config/ClientConfigManager;Lxaero/lib/client/graphics/XaeroBufferProvider;IIIDDZF)V",
             at = @At("HEAD"),
             cancellable = true,
             remap = false
     )
-    private void townymapaddon$suppressNativeEnlargedCompass(MatrixStack matrixStack,
+    private void townymapaddon$suppressNativeEnlargedCompass(PoseStack matrixStack,
                                                             @Coerce Object settings,
                                                             @Coerce Object configManager,
                                                             @Coerce Object bufferProvider,

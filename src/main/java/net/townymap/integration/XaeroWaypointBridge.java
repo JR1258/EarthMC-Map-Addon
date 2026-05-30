@@ -1,6 +1,6 @@
 package net.townymap.integration;
 
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.townymap.model.MapJumpTarget;
 import xaero.common.minimap.waypoints.Waypoint;
 import xaero.hud.minimap.BuiltInHudModules;
@@ -23,7 +23,7 @@ public final class XaeroWaypointBridge {
     public static boolean createRouteWaypoint(MapJumpTarget target) {
         if (target == null) return false;
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return false;
 
         MinimapSession session = BuiltInHudModules.MINIMAP.getCurrentSession();

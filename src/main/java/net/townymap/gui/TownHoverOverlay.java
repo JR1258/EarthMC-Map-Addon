@@ -1,8 +1,8 @@
 package net.townymap.gui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.model.TownData;
 import net.townymap.model.TownPopupData;
 
@@ -28,18 +28,18 @@ public final class TownHoverOverlay {
 
     private TownHoverOverlay() {}
 
-    public static void render(DrawContext ctx, int mouseX, int mouseY, int sw, int sh,
+    public static void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, int sw, int sh,
                               TownData town, TownPopupData details) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        TextRenderer tr = mc.textRenderer;
+        Minecraft mc = Minecraft.getInstance();
+        Font tr = mc.font;
         String name = "§f§l" + town.name();
         String mayor = "§7Mayor: §f" + mayor(details);
         String chunks = "§7Chunks: §f" + chunks(town, details);
         String hint = "§8Right-click for more info";
 
         int maxW = Math.max(
-                Math.max(tr.getWidth(name), tr.getWidth(mayor)),
-                Math.max(tr.getWidth(chunks), tr.getWidth(hint)));
+                Math.max(tr.width(name), tr.width(mayor)),
+                Math.max(tr.width(chunks), tr.width(hint)));
         int boxW = maxW + PADDING * 2;
         int boxH = LINE_HEIGHT * 4 + PADDING * 2;
         int x = Math.min(mouseX + 12, sw - boxW - 4);
@@ -50,10 +50,10 @@ public final class TownHoverOverlay {
         ctx.fill(x - 1, y - 1, x + boxW + 1, y + boxH + 1, BORDER);
         ctx.fill(x, y, x + boxW, y + boxH, BG);
         int textY = y + PADDING;
-        ctx.drawText(tr, name, x + PADDING, textY, 0xFFFFFFFF, true);
-        ctx.drawText(tr, mayor, x + PADDING, textY + LINE_HEIGHT, 0xFFFFFFFF, true);
-        ctx.drawText(tr, chunks, x + PADDING, textY + LINE_HEIGHT * 2, 0xFFFFFFFF, true);
-        ctx.drawText(tr, hint, x + PADDING, textY + LINE_HEIGHT * 3, 0xFFFFFFFF, true);
+        ctx.text(tr, name, x + PADDING, textY, 0xFFFFFFFF, true);
+        ctx.text(tr, mayor, x + PADDING, textY + LINE_HEIGHT, 0xFFFFFFFF, true);
+        ctx.text(tr, chunks, x + PADDING, textY + LINE_HEIGHT * 2, 0xFFFFFFFF, true);
+        ctx.text(tr, hint, x + PADDING, textY + LINE_HEIGHT * 3, 0xFFFFFFFF, true);
     }
 
     public static TownData townAt(double worldX, double worldZ, List<TownData> towns) {

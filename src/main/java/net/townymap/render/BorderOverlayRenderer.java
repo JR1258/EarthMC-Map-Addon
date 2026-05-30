@@ -8,12 +8,12 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.AddressMode;
 import com.mojang.blaze3d.textures.FilterMode;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
 import net.fabricmc.loader.api.FabricLoader;
 import net.townymap.TownyMapConfig;
 import org.slf4j.Logger;
@@ -114,7 +114,7 @@ final class BorderOverlayRenderer {
         executor.execute(this::prebuiltAtlasManifest);
     }
 
-    void render(DrawContext ctx, double cameraX, double cameraZ, double blockScale,
+    void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale,
                 int sw, int sh, double worldLeft, double worldRight,
                 double worldTop, double worldBottom) {
         int mode = config.borderOverlayMode;
@@ -132,7 +132,7 @@ final class BorderOverlayRenderer {
         }
     }
 
-    private void renderLayer(DrawContext ctx, int mode, double cameraX, double cameraZ, double blockScale,
+    private void renderLayer(GuiGraphicsExtractor ctx, int mode, double cameraX, double cameraZ, double blockScale,
                              int sw, int sh, double worldLeft, double worldRight,
                              double worldTop, double worldBottom, int maxNewRequests) {
         int zoom = chooseTileZoom(blockScale);
@@ -226,7 +226,7 @@ final class BorderOverlayRenderer {
         });
     }
 
-    private boolean renderAtlasTileIfAvailable(DrawContext ctx, TileKey key, double tileWorldSize,
+    private boolean renderAtlasTileIfAvailable(GuiGraphicsExtractor ctx, TileKey key, double tileWorldSize,
                                                double cameraX, double cameraZ, double blockScale,
                                                int sw, int sh) {
         if (!canUsePrebuiltAtlas(key)) return false;
@@ -297,7 +297,7 @@ final class BorderOverlayRenderer {
         NativeImage image = new NativeImage(TILE_PIXELS, TILE_PIXELS, false);
         for (int y = 0; y < TILE_PIXELS; y++) {
             for (int x = 0; x < TILE_PIXELS; x++) {
-                image.setColorArgb(x, y, buffered.getRGB(x, y));
+                image.setPixel(x, y, buffered.getRGB(x, y));
             }
         }
         return image;
@@ -450,7 +450,7 @@ final class BorderOverlayRenderer {
     }
 
     private void processCompletedTiles() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null) return;
 
         processAtlasUploads(client, completedCountryAtlases, MAX_ATLAS_TEXTURE_UPLOADS_PER_FRAME);
@@ -459,7 +459,7 @@ final class BorderOverlayRenderer {
         processTileUploads(client, completedTiles, MAX_TEXTURE_UPLOADS_PER_FRAME);
     }
 
-    private void processAtlasUploads(MinecraftClient client, Queue<LoadedAtlas> queue, int limit) {
+    private void processAtlasUploads(Minecraft client, Queue<LoadedAtlas> queue, int limit) {
         for (int i = 0; i < limit; i++) {
             LoadedAtlas loaded = queue.poll();
             if (loaded == null) return;
@@ -469,12 +469,12 @@ final class BorderOverlayRenderer {
                     loaded.image().close();
                     continue;
                 }
-                Identifier id = Identifier.of("townymapaddon",
+                Identifier id = Identifier.fromNamespaceAndPath("townymapaddon",
                         "border_atlas/" + key.mode() + "/" + key.zoom() + "/"
                                 + key.pageX() + "_" + key.pageY() + "_t" + key.thicknessQ());
                 BorderTileTexture texture =
                         new BorderTileTexture(() -> "TownyMap border atlas " + key, loaded.image());
-                client.getTextureManager().registerTexture(id, texture);
+                client.getTextureManager().register(id, texture);
                 atlasTextures.put(key, id);
                 evictOldTextures(client);
             } catch (Exception e) {
@@ -484,7 +484,7 @@ final class BorderOverlayRenderer {
         }
     }
 
-    private void processTileUploads(MinecraftClient client, Queue<LoadedTile> queue, int limit) {
+    private void processTileUploads(Minecraft client, Queue<LoadedTile> queue, int limit) {
         for (int i = 0; i < limit; i++) {
             LoadedTile loaded = queue.poll();
             if (loaded == null) return;
@@ -494,11 +494,11 @@ final class BorderOverlayRenderer {
                     loaded.image().close();
                     continue;
                 }
-                Identifier id = Identifier.of("townymapaddon",
+                Identifier id = Identifier.fromNamespaceAndPath("townymapaddon",
                         "borders/" + key.mode() + "/" + key.zoom() + "/" + key.x() + "_" + key.y() + "_t" + key.thicknessQ());
                 BorderTileTexture texture =
                         new BorderTileTexture(() -> "TownyMap border tile " + key, loaded.image());
-                client.getTextureManager().registerTexture(id, texture);
+                client.getTextureManager().register(id, texture);
                 textures.put(key, id);
                 evictOldTextures(client);
             } catch (Exception e) {
@@ -566,7 +566,7 @@ final class BorderOverlayRenderer {
         return new BorderLineIndex(Map.copyOf(index));
     }
 
-    private void renderTile(DrawContext ctx, Identifier texture, int tileX, int tileY,
+    private void renderTile(GuiGraphicsExtractor ctx, Identifier texture, int tileX, int tileY,
                             double tileWorldSize, double cameraX, double cameraZ,
                             double blockScale, int sw, int sh) {
         double tileWorldX = tileX * tileWorldSize;
@@ -579,12 +579,12 @@ final class BorderOverlayRenderer {
         if (x2 <= 0 || x1 >= sw || y2 <= 0 || y1 >= sh) return;
         int drawW = Math.max(1, x2 - x1);
         int drawH = Math.max(1, y2 - y1);
-        ctx.drawTexture(PIPELINE, texture, x1 - 1, y1 - 1, 0.0F, 0.0F,
+        ctx.blit(PIPELINE, texture, x1 - 1, y1 - 1, 0.0F, 0.0F,
                 drawW + 2, drawH + 2,
                 TILE_PIXELS, TILE_PIXELS, TILE_PIXELS, TILE_PIXELS);
     }
 
-    private void renderAtlasTile(DrawContext ctx, Identifier texture, TileKey key,
+    private void renderAtlasTile(GuiGraphicsExtractor ctx, Identifier texture, TileKey key,
                                  double tileWorldSize, double cameraX, double cameraZ,
                                  double blockScale, int sw, int sh) {
         double tileWorldX = key.x * tileWorldSize;
@@ -599,7 +599,7 @@ final class BorderOverlayRenderer {
         int drawH = Math.max(1, y2 - y1);
         int u = Math.floorMod(key.x(), ATLAS_GRID) * TILE_PIXELS;
         int v = Math.floorMod(key.y(), ATLAS_GRID) * TILE_PIXELS;
-        ctx.drawTexture(PIPELINE, texture, x1 - 1, y1 - 1, (float) u, (float) v,
+        ctx.blit(PIPELINE, texture, x1 - 1, y1 - 1, (float) u, (float) v,
                 drawW + 2, drawH + 2,
                 TILE_PIXELS, TILE_PIXELS, ATLAS_PIXELS, ATLAS_PIXELS);
     }
@@ -683,15 +683,15 @@ final class BorderOverlayRenderer {
                         minX, maxX, minZ, maxZ));
     }
 
-    private void evictOldTextures(MinecraftClient client) {
+    private void evictOldTextures(Minecraft client) {
         while (textures.size() > MAX_TEXTURES) {
             Map.Entry<TileKey, Identifier> eldest = textures.entrySet().iterator().next();
-            client.getTextureManager().destroyTexture(eldest.getValue());
+            client.getTextureManager().release(eldest.getValue());
             textures.remove(eldest.getKey());
         }
         while (atlasTextures.size() > MAX_TEXTURES / 4) {
             Map.Entry<AtlasKey, Identifier> eldest = atlasTextures.entrySet().iterator().next();
-            client.getTextureManager().destroyTexture(eldest.getValue());
+            client.getTextureManager().release(eldest.getValue());
             atlasTextures.remove(eldest.getKey());
         }
     }
@@ -782,10 +782,10 @@ final class BorderOverlayRenderer {
     private record LineFingerprint(int points, int xHash, int zHash,
                                    double minX, double maxX, double minZ, double maxZ) {}
 
-    private static final class BorderTileTexture extends NativeImageBackedTexture {
+    private static final class BorderTileTexture extends DynamicTexture {
         private BorderTileTexture(java.util.function.Supplier<String> name, NativeImage image) {
             super(name, image);
-            this.sampler = RenderSystem.getSamplerCache().get(
+            this.sampler = RenderSystem.getSamplerCache().getSampler(
                     AddressMode.CLAMP_TO_EDGE,
                     AddressMode.CLAMP_TO_EDGE,
                     FilterMode.LINEAR,

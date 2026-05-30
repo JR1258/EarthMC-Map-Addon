@@ -15,6 +15,13 @@ on:
           - release
           - beta
           - alpha
+      game_version:
+        description: "Minecraft game version for the Modrinth version, for example 1.21.11 or 26.1.2"
+        required: true
+        default: "1.21.11"
+      version_number:
+        description: "Optional Modrinth version number. Defaults to the tag without v."
+        required: false
       changelog:
         description: "Optional changelog override. If blank, the GitHub release notes are used."
         required: false
@@ -26,7 +33,7 @@ jobs:
       contents: read
 
     env:
-      GAME_VERSION: "1.21.11"
+      GAME_VERSION: ${{ inputs.game_version || '1.21.11' }}
       LOADER: "fabric"
       MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
       MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
@@ -39,6 +46,7 @@ jobs:
         shell: bash
         env:
           INPUT_TAG: ${{ inputs.tag }}
+          INPUT_VERSION_NUMBER: ${{ inputs.version_number }}
           INPUT_CHANGELOG: ${{ inputs.changelog }}
         run: |
           set -euo pipefail
@@ -53,7 +61,8 @@ jobs:
           fi
 
           tag="${INPUT_TAG}"
-          name="EarthMC Map Addon ${INPUT_TAG#v}"
+          version_number="${INPUT_VERSION_NUMBER:-${tag#v}}"
+          name="EarthMC Map Addon ${version_number}"
           changelog="${INPUT_CHANGELOG}"
           if [[ -z "${changelog}" ]]; then
             changelog="$(gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body)"
@@ -68,7 +77,7 @@ jobs:
 
           {
             echo "tag=${tag}"
-            echo "version_number=${tag#v}"
+            echo "version_number=${version_number}"
             echo "name=${name}"
             echo "changelog_path=changelog.md"
           } >> "${GITHUB_OUTPUT}"
@@ -84,7 +93,10 @@ jobs:
             --clobber \
             --dir dist
 
-          jar="$(find dist -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | sort | head -n 1)"
+          jar="$(find dist -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | grep -F "${GAME_VERSION}" | sort | head -n 1 || true)"
+          if [[ -z "${jar}" ]]; then
+            jar="$(find dist -type f -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | sort | head -n 1)"
+          fi
           if [[ -z "${jar}" ]]; then
             echo "No publishable jar found in GitHub release assets." >&2
             exit 1

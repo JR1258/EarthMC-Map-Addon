@@ -282,7 +282,7 @@ public class EarthMcApiClient {
                     .timeout(java.time.Duration.ofSeconds(20))
                     .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
                     .GET()
-                    .build();
+                .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) return resp.body();
             LOGGER.warn("[TownyMap] EarthMC API {} -> HTTP {}", url, resp.statusCode());

@@ -94,6 +94,9 @@ public abstract class MixinGuiMap {
     private void onRenderPreDropdown(DrawContext ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {
         try {
+            // Arrow first, so the UI panels below queue on top of it in the batch.
+            renderPlayerArrow(ctx);
+
             MinecraftClient mc = MinecraftClient.getInstance();
             int w = mc.getWindow().getScaledWidth();
             int h = mc.getWindow().getScaledHeight();
@@ -111,21 +114,19 @@ public abstract class MixinGuiMap {
         }
     }
 
-    // Arrow drawn via DrawContext at method_25394 RETURN.
+    // Player arrow, drawn via DrawContext at the START of renderPreDropdown.
     //
-    // Root cause of all previous failures: SquaremapTileRenderer calls
-    // ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ...) which enqueues into
-    // DrawContext's deferred batch. That batch is flushed once — at frame-end,
-    // AFTER everything rendered via vertex buffers (CustomRenderTypes.GUI_BILINEAR).
-    // Any vertex-buffer arrow always lands behind the squaremap tiles no matter the
-    // injection point.
+    // Layering requirement: the arrow must sit ABOVE the squaremap tiles but BELOW
+    // our UI panels (search bar, town info, toggles).  The chronology in
+    // method_25394 is: onBeforePlayerArrow (tiles drawn + drawDeferredElements
+    // flush) → renderPreDropdown (our overlays) → RETURN.  Drawing the arrow here,
+    // before the UI panels, queues it into the deferred batch ahead of them, so the
+    // arrow renders under the UI; and since the tiles were already flushed in
+    // onBeforePlayerArrow, the arrow still renders on top of the tiles.
     //
-    // Fix: queue the arrow through DrawContext too (ctx.fill() + matrix rotation),
-    // after the squaremap tile draws. Both end up in the same deferred batch; the
-    // arrow is queued last so it renders on top when the batch flushes at frame-end.
-    @Inject(method = "method_25394", at = @At("RETURN"), remap = false)
-    private void onRenderReturn(DrawContext ctx, int mouseX, int mouseY,
-                                float delta, CallbackInfo ci) {
+    // (Previously this drew at method_25394 RETURN, which queued the arrow AFTER the
+    // UI panels — making the arrow draw over the search box.)
+    private void renderPlayerArrow(DrawContext ctx) {
         try {
             if (!TownyMapMod.shouldRenderWorldMapIndicatorOverlay()) return;
             MinecraftClient mc = MinecraftClient.getInstance();

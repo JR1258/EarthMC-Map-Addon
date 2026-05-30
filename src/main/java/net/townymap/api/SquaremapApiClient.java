@@ -150,13 +150,50 @@ public class SquaremapApiClient {
             String json = get(config.markersUrl());
             if (json != null) {
                 List<TownData> parsed = parseMarkers(json);
-                towns = List.copyOf(parsed);
+                List<TownData> updated = reuseUnchangedTowns(towns, parsed);
+                if (updated == towns) {
+                    LOGGER.debug("[TownyMap] Town polygons unchanged");
+                    return;
+                }
+                towns = updated;
                 TownyMapMod.onTownMarkersUpdated();
-                LOGGER.info("[TownyMap] Loaded {} town polygons", parsed.size());
+                LOGGER.info("[TownyMap] Loaded {} town polygons", updated.size());
             }
         } finally {
             markerFetchRunning.set(false);
         }
+    }
+
+    private static List<TownData> reuseUnchangedTowns(List<TownData> current, List<TownData> parsed) {
+        if (parsed.isEmpty()) return List.of();
+        if (current.isEmpty()) return List.copyOf(parsed);
+
+        Map<String, TownData> currentByKey = new HashMap<>(Math.max(16, current.size() * 2));
+        for (TownData town : current) {
+            currentByKey.put(town.key(), town);
+        }
+
+        ArrayList<TownData> merged = new ArrayList<>(parsed.size());
+        boolean changed = parsed.size() != current.size();
+        for (TownData town : parsed) {
+            TownData existing = currentByKey.get(town.key());
+            if (existing != null && existing.renderSignature() == town.renderSignature()) {
+                merged.add(existing);
+            } else {
+                merged.add(town);
+                changed = true;
+            }
+        }
+
+        if (!changed) {
+            for (int i = 0; i < current.size(); i++) {
+                if (current.get(i) != merged.get(i)) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        return changed ? List.copyOf(merged) : current;
     }
 
     private void fetchPlayers() {

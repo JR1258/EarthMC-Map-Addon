@@ -1,6 +1,7 @@
 package net.townymap.model;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Holds rendering data for one Towny town.
@@ -21,6 +22,28 @@ public record TownData(String name, int rgbColor, List<int[][]> polygonRings,
     /** ARGB colour with the given opacity applied on top of the stored RGB. */
     public int argbColor(int alpha) {
         return ((alpha & 0xFF) << 24) | (rgbColor & 0x00FFFFFF);
+    }
+
+    public String key() {
+        return name == null ? "" : name.toLowerCase(Locale.ROOT);
+    }
+
+    public long renderSignature() {
+        long hash = 1125899906842597L;
+        hash = 31L * hash + key().hashCode();
+        hash = 31L * hash + rgbColor;
+        hash = 31L * hash + minX;
+        hash = 31L * hash + maxX;
+        hash = 31L * hash + minZ;
+        hash = 31L * hash + maxZ;
+        for (int[][] ring : polygonRings) {
+            hash = 31L * hash + ring.length;
+            for (int[] point : ring) {
+                hash = 31L * hash + (point.length > 0 ? point[0] : 0);
+                hash = 31L * hash + (point.length > 1 ? point[1] : 0);
+            }
+        }
+        return hash;
     }
 
     public boolean intersectsWorld(double left, double right, double top, double bottom) {

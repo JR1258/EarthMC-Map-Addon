@@ -9,6 +9,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Util;
 import net.townymap.model.EarthMcNationData;
 import net.townymap.model.TownPopupData;
+import net.townymap.util.DiscordUrl;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -33,6 +34,12 @@ public final class TownInfoOverlay {
 
     private static final int BG_COLOR     = 0xD8101010;
     private static final int BORDER_COLOR = 0xFF333333;
+    private static final int LINK_COLOR       = 0xFF8FB7FF;
+    private static final int LINK_HOVER_COLOR = 0xFFFFE066;
+
+    // Clickable name spans (Nation in the title → nation search, Mayor → player
+    // search).  Rebuilt every render; consumed by handleClick().
+    private static final List<InfoLink> infoLinks = new ArrayList<>();
 
     private static TownPopupData currentData;
     private static int screenX, screenY;
@@ -51,6 +58,8 @@ public final class TownInfoOverlay {
         screenX     = sx;
         screenY     = sy;
         showUntil   = System.currentTimeMillis() + DISPLAY_MS;
+        // Only one right-side info panel at a time: hide the search result panel.
+        TownSearchOverlay.dismissSelection();
     }
 
     public static void show(TownPopupData data, int sx, int sy) {
@@ -59,11 +68,13 @@ public final class TownInfoOverlay {
         screenX     = sx;
         screenY     = sy;
         showUntil   = System.currentTimeMillis() + DISPLAY_MS;
+        TownSearchOverlay.dismissSelection();
     }
 
     public static void dismiss() {
         currentData = null;
         loading     = false;
+        infoLinks.clear();
     }
 
     public static TownPopupData currentData() {
@@ -72,6 +83,7 @@ public final class TownInfoOverlay {
 
     public static void render(DrawContext ctx, int sw, int sh, boolean favorite,
                               Map<String, EarthMcNationData> nationDetails) {
+        infoLinks.clear();
         if (!loading && currentData == null) return;
         if (System.currentTimeMillis() > showUntil) {
             dismiss();
@@ -81,17 +93,17 @@ public final class TownInfoOverlay {
         MinecraftClient mc = MinecraftClient.getInstance();
         TextRenderer tr = mc.textRenderer;
 
-        List<String> lines = buildLines(nationDetails);
+        List<InfoRow> lines = buildLines(nationDetails);
         if (lines.isEmpty()) return;
 
         // Measure rendered text width and add more breathing room for long names.
         int maxW = 0;
         int longestVisibleChars = 0;
-        for (String line : lines) {
-            String visible = stripFormatting(line);
-            int w = Math.max(tr.getWidth(line), tr.getWidth(visible));
+        for (InfoRow row : lines) {
+            int w = rowWidth(tr, row);
             if (w > maxW) maxW = w;
-            if (visible.length() > longestVisibleChars) longestVisibleChars = visible.length();
+            int chars = stripFormatting(row.prefix() + row.name() + row.suffix()).length();
+            if (chars > longestVisibleChars) longestVisibleChars = chars;
         }
         int horizontalPadding = PADDING + extraHorizontalPadding(longestVisibleChars);
         boolean showButtons = !loading && currentData != null && currentData != TownPopupData.WILDERNESS;
@@ -114,10 +126,25 @@ public final class TownInfoOverlay {
             drawFavoriteStar(ctx, tr, bx, by, boxW, favorite);
         }
 
-        // Text — use the String overload (same path as player name labels)
+        // Text — use the String overload (same path as player name labels).
+        // Link rows draw the label prefix, then the clickable name (yellow on
+        // hover), then any suffix; the name's bounds are recorded for handleClick.
+        int mx = scaledMouseX();
+        int my = scaledMouseY();
         int ty = by + PADDING;
-        for (String line : lines) {
-            ctx.drawText(tr, line, bx + horizontalPadding, ty, 0xFFFFFFFF, true);
+        for (InfoRow row : lines) {
+            int px = bx + horizontalPadding;
+            ctx.drawText(tr, row.prefix(), px, ty, 0xFFFFFFFF, true);
+            if (row.hasLink()) {
+                int nameX = px + tr.getWidth(row.prefix());
+                int nameW = tr.getWidth(row.name());
+                boolean hover = mx >= nameX && mx <= nameX + nameW && my >= ty - 1 && my <= ty + 11;
+                ctx.drawText(tr, row.name(), nameX, ty, hover ? LINK_HOVER_COLOR : LINK_COLOR, true);
+                infoLinks.add(new InfoLink(nameX, ty - 1, nameW, 12, row.linkType(), row.name()));
+                if (!row.suffix().isEmpty()) {
+                    ctx.drawText(tr, row.suffix(), nameX + nameW, ty, 0xFFFFFFFF, true);
+                }
+            }
             ty += LINE_HEIGHT;
         }
 
@@ -127,7 +154,21 @@ public final class TownInfoOverlay {
         }
     }
 
+    private static int rowWidth(TextRenderer tr, InfoRow row) {
+        int w = tr.getWidth(row.prefix());
+        if (row.hasLink()) w += tr.getWidth(row.name()) + tr.getWidth(row.suffix());
+        return w;
+    }
+
     public static ActionResult handleClick(double mouseX, double mouseY) {
+        // Clickable names work whenever a real town is shown (even before buttons).
+        if (currentData != null && currentData != TownPopupData.WILDERNESS) {
+            for (InfoLink link : infoLinks) {
+                if (link.contains(mouseX, mouseY)) {
+                    return ActionResult.search(link.type(), link.name());
+                }
+            }
+        }
         if (!hasButtons || currentData == null || currentData == TownPopupData.WILDERNESS) return ActionResult.none();
         String town = currentData.townName();
         if (inside(mouseX, mouseY, favoriteX1, favoriteY1, favoriteX2, favoriteY2)) return ActionResult.favorite(town);
@@ -139,11 +180,11 @@ public final class TownInfoOverlay {
         return ActionResult.none();
     }
 
-    private static List<String> buildLines(Map<String, EarthMcNationData> nationDetails) {
-        List<String> lines = new ArrayList<>();
+    private static List<InfoRow> buildLines(Map<String, EarthMcNationData> nationDetails) {
+        List<InfoRow> lines = new ArrayList<>();
 
         if (loading) {
-            lines.add("§7§oLooking up town...");
+            lines.add(InfoRow.text("§7§oLooking up town..."));
             return lines;
         }
 
@@ -151,36 +192,38 @@ public final class TownInfoOverlay {
         if (d == null) return lines;
 
         if (d == TownPopupData.WILDERNESS) {
-            lines.add("§aWilderness");
+            lines.add(InfoRow.text("§aWilderness"));
             return lines;
         }
 
-        // Title
-        String title = d.nationName().isEmpty()
-                ? "§f§l" + d.townName()
-                : "§f§l" + d.townName() + " §7§l(" + d.nationName() + ")";
-        lines.add(title);
+        // Title — the nation name (in parens) is a clickable nation search.
+        if (d.nationName().isEmpty()) {
+            lines.add(InfoRow.text("§f§l" + d.townName()));
+        } else {
+            lines.add(InfoRow.link("§f§l" + d.townName() + " §7§l(", d.nationName(), "§7§l)", "nation"));
+        }
 
         // Board
         if (hasBoard(d.board())) {
-            lines.add("§7§o" + d.board());
+            lines.add(InfoRow.text("§7§o" + d.board()));
         }
 
         // Spacer
-        lines.add("");
+        lines.add(InfoRow.text(""));
 
-        lines.add("§7Mayor: §f§l"     + d.mayor());
+        // Mayor name → clickable player search.
+        lines.add(InfoRow.link("§7Mayor: §f§l", d.mayor(), "", "player"));
         int possibleChunks = possibleTownChunks(d, nationDetails);
         boolean overLimit = d.isOverClaimed() || d.numChunks() > possibleChunks;
         String sizeColor = overLimit ? "§c§l" : "§f§l";
-        lines.add("§7Size: " + sizeColor + d.numChunks() + " / " + possibleChunks + " chunks");
+        lines.add(InfoRow.text("§7Size: " + sizeColor + d.numChunks() + " / " + possibleChunks + " chunks"));
         if (!d.founded().isEmpty()) {
-            lines.add("§7Founded: §f§l" + d.founded());
+            lines.add(InfoRow.text("§7Founded: §f§l" + d.founded()));
         }
-        lines.add("§7Open: §f§l"      + (d.isOpen()   ? "Yes" : "No"));
-        lines.add("§7Public: §f§l"    + (d.isPublic() ? "Yes" : "No"));
-        lines.add("§7Residents: §f§l" + d.residentCount());
-        lines.add("§7Gold: §f§l"      + formatGold(d.balance()));
+        lines.add(InfoRow.text("§7Open: §f§l"      + (d.isOpen()   ? "Yes" : "No")));
+        lines.add(InfoRow.text("§7Public: §f§l"    + (d.isPublic() ? "Yes" : "No")));
+        lines.add(InfoRow.text("§7Residents: §f§l" + d.residentCount()));
+        lines.add(InfoRow.text("§7Gold: §f§l"      + formatGold(d.balance())));
 
         return lines;
     }
@@ -270,16 +313,7 @@ public final class TownInfoOverlay {
     }
 
     private static String normalizeDiscordUrl(String discord) {
-        if (discord == null || discord.isBlank()) return "";
-        String value = discord.trim();
-        String lower = value.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("http://") || lower.startsWith("https://")) return value;
-        if (lower.startsWith("discord.gg/") || lower.startsWith("discord.com/")
-                || lower.startsWith("www.discord.gg/") || lower.startsWith("www.discord.com/")) {
-            return "https://" + value;
-        }
-        if (!value.contains("/") && !value.contains(".")) return "https://discord.gg/" + value;
-        return "https://" + value;
+        return DiscordUrl.normalize(discord);
     }
 
     public static void openDiscord(String url) {
@@ -308,18 +342,22 @@ public final class TownInfoOverlay {
         return mouseX >= x1 && mouseX <= x2 && mouseY >= y1 && mouseY <= y2;
     }
 
-    public record ActionResult(Action action, String townName, String url) {
+    public record ActionResult(Action action, String townName, String url,
+                               String searchType, String searchName) {
         public static ActionResult none() {
-            return new ActionResult(Action.NONE, "", "");
+            return new ActionResult(Action.NONE, "", "", "", "");
         }
         public static ActionResult favorite(String townName) {
-            return new ActionResult(Action.FAVORITE, townName, "");
+            return new ActionResult(Action.FAVORITE, townName, "", "", "");
         }
         public static ActionResult discord(String townName, String url) {
-            return new ActionResult(Action.DISCORD, townName, url);
+            return new ActionResult(Action.DISCORD, townName, url, "", "");
         }
         public static ActionResult route(String townName) {
-            return new ActionResult(Action.ROUTE, townName, "");
+            return new ActionResult(Action.ROUTE, townName, "", "", "");
+        }
+        public static ActionResult search(String searchType, String searchName) {
+            return new ActionResult(Action.SEARCH, "", "", searchType, searchName);
         }
     }
 
@@ -327,6 +365,23 @@ public final class TownInfoOverlay {
         NONE,
         FAVORITE,
         DISCORD,
-        ROUTE
+        ROUTE,
+        SEARCH
+    }
+
+    /** One line of the popup: label prefix, optional clickable name, optional suffix. */
+    private record InfoRow(String prefix, String name, String suffix, String linkType) {
+        static InfoRow text(String formatted) { return new InfoRow(formatted, "", "", ""); }
+        static InfoRow link(String prefix, String name, String suffix, String linkType) {
+            return new InfoRow(prefix, name, suffix, linkType);
+        }
+        boolean hasLink() { return !linkType.isEmpty() && !name.isEmpty(); }
+    }
+
+    /** A clickable name span: bounds plus the entity to search for. */
+    private record InfoLink(int x, int y, int w, int h, String type, String name) {
+        boolean contains(double mx, double my) {
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        }
     }
 }

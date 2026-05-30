@@ -120,6 +120,11 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile long lastMinimapNationAlertUpdateMs = 0;
     /** Prevents hammering EarthMC API when nations index fails to load. */
     private static volatile long lastNationIndexAttemptMs = 0;
+    // Caches for hot-path string work (recomputed only when the input changes).
+    private static String activeServerAddress = null;
+    private static boolean activeServerResult = false;
+    private static String cachedSelfName = null;
+    private static String cachedSelfKey = null;
 
     @Override
     public void onInitializeClient() {
@@ -742,6 +747,15 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     public static int playerDotColor(String playerName) {
+        return playerDotColor(playerName, townKey(playerName));
+    }
+
+    /**
+     * @param playerKey the lowercase player name.  Callers in the per-frame render
+     *                  loop pass {@link net.townymap.model.PlayerMarker#key()} so no
+     *                  lowercase string is allocated per player per frame.
+     */
+    public static int playerDotColor(String playerName, String playerKey) {
         if (!isActiveOnCurrentServer() || config == null || !config.playersEnabled) return 0;
         if (earthMcApi == null || playerName == null || playerName.isBlank()) return 0xFFFFFFFF;
 
@@ -750,15 +764,13 @@ public class TownyMapMod implements ClientModInitializer {
         String selfName = client.getSession().getUsername();
         if (playerName.equalsIgnoreCase(selfName)) return 0;
 
-        String selfKey = townKey(selfName);
-        EarthMcPlayerData self = playerDetailsCache.get(selfKey);
+        EarthMcPlayerData self = playerDetailsCache.get(sessionSelfKey(selfName));
         if (self == null) {
             requestMinimapPlayerDetails(selfName);
             return 0xFFFFFFFF;
         }
 
-        String key = townKey(playerName);
-        EarthMcPlayerData other = playerDetailsCache.get(key);
+        EarthMcPlayerData other = playerDetailsCache.get(playerKey);
         if (other == null) {
             requestMinimapPlayerDetails(playerName);
             return 0xFFFFFFFF;
@@ -775,6 +787,15 @@ public class TownyMapMod implements ClientModInitializer {
             return 0xFFFFE066;
         }
         return 0xFFFFFFFF;
+    }
+
+    /** Lowercase key of the local player's name, cached for the session. */
+    private static String sessionSelfKey(String selfName) {
+        if (!selfName.equals(cachedSelfName)) {
+            cachedSelfName = selfName;
+            cachedSelfKey = townKey(selfName);
+        }
+        return cachedSelfKey;
     }
 
     public static int minimapPlayerDotColor(String playerName) {
@@ -896,6 +917,10 @@ public class TownyMapMod implements ClientModInitializer {
             TownInfoOverlay.openDiscord(result.url());
         } else if (result.action() == TownInfoOverlay.Action.ROUTE) {
             createXaeroRoute(townInfoRouteTarget);
+        } else if (result.action() == TownInfoOverlay.Action.SEARCH) {
+            // Clicking a name in the popup hands off to the search info panel.
+            TownInfoOverlay.dismiss();
+            TownSearchOverlay.openSearch(result.searchType(), result.searchName());
         }
         return result;
     }
@@ -944,7 +969,15 @@ public class TownyMapMod implements ClientModInitializer {
         if (client == null) return false;
         ServerInfo server = client.getCurrentServerEntry();
         if (server == null || server.address == null) return false;
-        return server.address.toLowerCase(Locale.ROOT).contains("earthmc.net");
+        // Cache the toLowerCase().contains() result per server address.  This is
+        // called once per online player per frame (playerDotColor), so the string
+        // allocation is hot; recompute only when the address actually changes.
+        String address = server.address;
+        if (!address.equals(activeServerAddress)) {
+            activeServerAddress = address;
+            activeServerResult = address.toLowerCase(Locale.ROOT).contains("earthmc.net");
+        }
+        return activeServerResult;
     }
 
     private static void showLookupResult(TownPopupData data, int screenX, int screenY,
@@ -1102,7 +1135,7 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void requestVisibleTownDetails(double cameraX, double cameraZ, double scale,
                                                   int screenW, int screenH) {
-        if (earthMcApi == null || apiClient == null || config == null) return;
+        if (earthMcApi == null || apiClient == null || renderer == null || config == null) return;
         if (config.townStatusOverlayMode == 0) return;
         if (scale <= 0) return;
         long now = System.currentTimeMillis();
@@ -1114,14 +1147,14 @@ public class TownyMapMod implements ClientModInitializer {
         double worldTop = cameraZ - screenH / 2.0 / scale;
         double worldBottom = cameraZ + screenH / 2.0 / scale;
 
-        int requested = 0;
-        for (TownData town : apiClient.getTowns()) {
-            if (!town.intersectsWorld(worldLeft, worldRight, worldTop, worldBottom)) continue;
-            String key = townKey(town.name());
-            if (townDetailsCache.containsKey(key) || townDetailsLoading.contains(key)) continue;
-            requestTownDetails(town.name(), key);
-            if (++requested >= 4) return;
-        }
+        // Uses the renderer's spatial index (and precomputed town keys) so we no
+        // longer scan all ~4000 towns or allocate a lowercase key per candidate.
+        renderer.forEachVisibleTownDetail(worldLeft, worldRight, worldTop, worldBottom, 4,
+                (name, key) -> {
+                    if (townDetailsCache.containsKey(key) || townDetailsLoading.contains(key)) return false;
+                    requestTownDetails(name, key);
+                    return true;
+                });
     }
 
     private static void requestVisiblePlayerDetails(double cameraX, double cameraZ, double scale,

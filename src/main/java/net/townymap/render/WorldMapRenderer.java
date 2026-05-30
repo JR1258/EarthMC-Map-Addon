@@ -11,7 +11,7 @@ import net.townymap.model.OptimisticClaimChunk;
 import net.townymap.model.PlayerMarker;
 import net.townymap.model.TownData;
 import net.townymap.model.TownPopupData;
-
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiPredicate;
 
 /**
  * Draws Towny town borders and online-player dots over Xaero's WorldMap.
@@ -36,26 +37,27 @@ public class WorldMapRenderer {
 
     private static final int DOT_HALF = 2;
     private static final double TOWN_FILL_MIN_SCALE = 0.035;
-    private static final double MIN_TOWN_SCREEN_PIXELS = 2.0;
+    private static final double MIN_TOWN_SCREEN_PIXELS = 0.0;
     private static final int CHUNK_SIZE = 16;
     private static final int HOVER_CHUNK_FILL = 0x22FFFFFF;
     private static final int HOVER_CHUNK_BORDER = 0xD8FFFFFF;
     private static final double MIN_CHUNK_GRID_SPACING = 4.0;
     private static final int TOWN_INDEX_CELL_SIZE = 2048;
     private static final long STATUS_RGB_CYCLE_MS = 5000L;
+    private static final int TINY_TOWN_SCREEN_PIXELS = 2;
 
-    // ── Render-thread scratch buffers (never allocate in the hot path) ────────
-    // All polygon rendering happens on the MC main/render thread, so static
-    // scratch arrays are safe and eliminate GC pressure that caused map-pan stutter.
-    private static int[] scratchSX = new int[512];
-    private static int[] scratchSY = new int[512];
-    private static int[] scratchBandY = new int[512];
-    private static int[] scratchBandX = new int[256];
-
-    private static int[] grow(int[] arr, int needed) {
-        if (arr.length >= needed) return arr;
-        return new int[Math.max(needed, arr.length * 2)];
-    }
+    // ── Outline level-of-detail ───────────────────────────────────────────────
+    // Each ring stores its outline at several resolutions, built by snapping the
+    // (chunk-aligned) vertices to a coarser grid and merging the result.  Coarser
+    // grids drop small features → fewer connected line segments when zoomed out.
+    //
+    // LOD_GRID[k] = snap grid in blocks for level k.  Level 0 is the raw outline
+    // (Towny data is already on the 16-block chunk grid, so grid 16 == raw).
+    // LOD_MIN_SCALE[k] = use level k while blockScale (px/block) ≥ this value.
+    //   Chosen so the snap grid maps to roughly 2–4 px on screen at each level,
+    //   i.e. features smaller than a few pixels are removed.
+    private static final int[]    LOD_GRID      = { 16,   32,    80,    192   };
+    private static final double[] LOD_MIN_SCALE = { 0.125, 0.05, 0.022, 0.0   };
 
     private final TownyMapConfig     config;
     private final SquaremapApiClient api;
@@ -69,6 +71,7 @@ public class WorldMapRenderer {
     private final AtomicBoolean townCacheBuildRunning = new AtomicBoolean(false);
     private final List<RenderTown> visibleTownScratch = new ArrayList<>(256);
     private final Set<RenderTown> visibleTownSeen = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<RenderTown> detailQuerySeen = Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile TownRenderCache townRenderCache = TownRenderCache.empty();
     private volatile List<TownData> townCacheRequestedSource = List.of();
     private final Set<String> favoriteTownKeys = new HashSet<>();
@@ -105,14 +108,12 @@ public class WorldMapRenderer {
         borderOverlay.render(ctx, cameraX, cameraZ, blockScale, sw, sh,
                 worldLeft, worldRight, worldTop, worldBottom);
 
-        if (config.townsEnabled) {
-            renderTownFills(ctx, cameraX, cameraZ, blockScale, sw, sh, visibleTowns);
-        }
         renderChunkGrid(ctx, cameraX, cameraZ, blockScale, sw, sh,
                 worldLeft, worldRight, worldTop, worldBottom);
         if (config.townsEnabled) {
-            renderTownOutlines(ctx, cameraX, cameraZ, blockScale, sw, sh,
-                    visibleTowns, townDetails);
+            // Single pass: fill + outline per town — halves bounding-box computations
+            // vs. the old separate fill-pass / outline-pass approach.
+            renderTowns(ctx, cameraX, cameraZ, blockScale, sw, sh, visibleTowns, townDetails);
             renderOptimisticClaimChunks(ctx, cameraX, cameraZ, blockScale, sw, sh,
                     worldLeft, worldRight, worldTop, worldBottom);
         }
@@ -277,185 +278,177 @@ public class WorldMapRenderer {
         }
     }
 
-    private void renderTownFills(DrawContext ctx,
-                                 double cameraX, double cameraZ, double blockScale,
-                                 int sw, int sh,
-                                 List<RenderTown> visibleTowns) {
-        for (RenderTown town : visibleTowns) {
-            int fillColor   = blockScale >= TOWN_FILL_MIN_SCALE ? town.data().argbColor(config.fillAlpha) : 0;
-            boolean favorite = isFavorite(town.name());
-
-            for (RingGeometry ring : town.rings()) {
-                renderRing(ctx, ring, 0, fillColor,
-                        cameraX, cameraZ, blockScale, sw, sh);
-                if (favorite) {
-                    renderRing(ctx, ring, 0, 0x22FFE066,
-                            cameraX, cameraZ, blockScale, sw, sh);
-                }
-            }
-        }
-    }
-
-    private void renderTownOutlines(DrawContext ctx,
-                                    double cameraX, double cameraZ, double blockScale,
-                                    int sw, int sh,
-                                    List<RenderTown> visibleTowns,
-                                    Map<String, TownPopupData> townDetails) {
+    private void renderTowns(DrawContext ctx,
+                             double cameraX, double cameraZ, double blockScale,
+                             int sw, int sh,
+                             List<RenderTown> visibleTowns,
+                             Map<String, TownPopupData> townDetails) {
         int statusRgb = statusHighlightRgb();
+        int fillColor0 = blockScale >= TOWN_FILL_MIN_SCALE ? 0xFF : 0;  // fill enabled?
         for (RenderTown town : visibleTowns) {
             int borderColor = town.data().argbColor(config.borderAlpha);
+            int fillColor   = fillColor0 != 0 ? town.data().argbColor(config.fillAlpha) : 0;
             boolean favorite = isFavorite(town.name());
+
             TownPopupData details = townDetails.get(town.key());
-            boolean publicSpawn = config.townStatusOverlayMode == 1
-                    && details != null
-                    && details.canOutsidersSpawn();
-            boolean overclaimed = config.townStatusOverlayMode == 2
-                    && details != null
-                    && details.isOverClaimed();
-            boolean open = config.townStatusOverlayMode == 3
-                    && details != null
-                    && details.isOpen();
-            boolean forSale = config.townStatusOverlayMode == 4
-                    && details != null
-                    && details.isForSale();
-            boolean noNation = config.townStatusOverlayMode == 5
-                    && details != null
-                    && !details.hasNation();
-            boolean statusHighlighted = publicSpawn || overclaimed || open || forSale || noNation;
+            boolean statusHighlighted = false;
+            if (details != null && config.townStatusOverlayMode > 0) {
+                statusHighlighted = switch (config.townStatusOverlayMode) {
+                    case 1 -> details.canOutsidersSpawn();
+                    case 2 -> details.isOverClaimed();
+                    case 3 -> details.isOpen();
+                    case 4 -> details.isForSale();
+                    case 5 -> !details.hasNation();
+                    default -> false;
+                };
+            }
+
             for (RingGeometry ring : town.rings()) {
-                renderRing(ctx, ring, borderColor, 0,
-                           cameraX, cameraZ, blockScale, sw, sh);
+                // Base fill + outline in one call — bounding box computed once per ring
+                renderRing(ctx, ring, borderColor, fillColor, cameraX, cameraZ, blockScale, sw, sh);
                 if (statusHighlighted) {
                     renderRing(ctx, ring, 0xFF000000 | statusRgb, 0x44000000 | statusRgb,
-                            cameraX, cameraZ, blockScale, sw, sh);
+                               cameraX, cameraZ, blockScale, sw, sh);
                 }
                 if (favorite) {
-                    renderRing(ctx, ring, 0xFFFFE066, 0,
-                            cameraX, cameraZ, blockScale, sw, sh);
+                    renderRing(ctx, ring, 0xFFFFE066, 0x22FFE066,
+                               cameraX, cameraZ, blockScale, sw, sh);
                 }
             }
         }
     }
 
     // ── Shared ring renderer ─────────────────────────────────────────────────
+    //
+    // Iterates the pre-merged H/V segment arrays directly — no allocation, no
+    // matrix ops.  Segments whose endpoints map to the same screen pixel are
+    // skipped (truly sub-pixel and invisible).
+    //
+    // Safety net: if every single merged segment was sub-pixel (happens only for
+    // very small or highly irregular towns at extreme zoom-out), we fall back to
+    // a 4-call bounding-box outline so the town is always visible.  This fallback
+    // fires rarely and costs at most 4 draw calls when it does.
 
     private void renderRing(DrawContext ctx, RingGeometry ring,
                             int borderColor, int fillColor,
                             double cameraX, double cameraZ, double blockScale,
                             int sw, int sh) {
-        int n = ring.length();
-        if (n < 2) return;
-
+        // Town-level bounding-box cull
         int screenMinX = toScreenX(ring.minX(), cameraX, blockScale, sw);
         int screenMaxX = toScreenX(ring.maxX(), cameraX, blockScale, sw);
         int screenMinY = toScreenY(ring.minZ(), cameraZ, blockScale, sh);
         int screenMaxY = toScreenY(ring.maxZ(), cameraZ, blockScale, sh);
         if (screenMaxX < 0 || screenMinX > sw || screenMaxY < 0 || screenMinY > sh) return;
 
-        // Use scratch buffers — no heap allocation on the hot path.
-        scratchSX = grow(scratchSX, n);
-        scratchSY = grow(scratchSY, n);
-        int[] sx = scratchSX;
-        int[] sy = scratchSY;
-        int[] worldX = ring.x();
-        int[] worldZ = ring.z();
+        int bbW = Math.abs(screenMaxX - screenMinX);
+        int bbH = Math.abs(screenMaxY - screenMinY);
 
-        for (int i = 0; i < n; i++) {
-            sx[i] = toScreenX(worldX[i], cameraX, blockScale, sw);
-            sy[i] = toScreenY(worldZ[i], cameraZ, blockScale, sh);
+        // Tiny town: bounding box ≤ TINY pixels — single dot
+        if (bbW <= TINY_TOWN_SCREEN_PIXELS && bbH <= TINY_TOWN_SCREEN_PIXELS) {
+            int dotColor = (borderColor >>> 24) > 0 ? borderColor : fillColor;
+            renderTinyTown(ctx, screenMinX, screenMinY, screenMaxX, screenMaxY, dotColor, sw, sh);
+            return;
         }
 
-        int minX = sx[0], maxX = sx[0], minY = sy[0], maxY = sy[0];
-        for (int i = 1; i < n; i++) {
-            if (sx[i] < minX) minX = sx[i];
-            if (sx[i] > maxX) maxX = sx[i];
-            if (sy[i] < minY) minY = sy[i];
-            if (sy[i] > maxY) maxY = sy[i];
-        }
-        if (maxX < 0 || minX > sw || maxY < 0 || minY > sh) return;
-
-        // Skip fill for polygons whose screen bounding box is too small to see.
-        if ((fillColor >>> 24) > 0 && maxX - minX > 2 && maxY - minY > 2) {
-            scanlineFill(ctx, sx, sy, n, minY, maxY, fillColor, sw);
+        // Fill (pre-computed rects, gated by TOWN_FILL_MIN_SCALE in caller)
+        if ((fillColor >>> 24) > 0 && bbW > 2 && bbH > 2) {
+            renderCachedFill(ctx, ring, fillColor, cameraX, cameraZ, blockScale, sw, sh);
         }
 
-        if ((borderColor >>> 24) > 0) {
-            for (int i = 0; i < n; i++) {
-                int j  = (i + 1) % n;
-                int x1 = sx[i], y1 = sy[i];
-                int x2 = sx[j], y2 = sy[j];
-                if (y1 == y2) {
-                    ctx.drawHorizontalLine(Math.min(x1, x2), Math.max(x1, x2), y1, borderColor);
-                } else if (x1 == x2) {
-                    ctx.drawVerticalLine(x1, Math.min(y1, y2), Math.max(y1, y2), borderColor);
+        if ((borderColor >>> 24) == 0) return;
+
+        // Pick the LOD whose snap grid maps to a few pixels at this zoom.
+        // Higher zoom → finer detail; lower zoom → coarser, fewer segments.
+        int lod = selectLod(blockScale);
+        int[] xs = ring.lodX(lod), zs = ring.lodZ(lod);
+        int n = xs.length;
+        if (n < 2) {
+            renderBoundingBoxBorder(ctx, screenMinX, screenMinY, screenMaxX, screenMaxY,
+                                    borderColor, sw, sh);
+            return;
+        }
+
+        // Draw the outline as ONE connected closed loop.  We walk vertices in
+        // order and draw every on-screen edge, so visible corners always join.
+        //
+        // Per-edge trivial reject: if both endpoints are off the SAME side of the
+        // screen the whole edge is invisible, so we skip its draw call but still
+        // advance prevX/prevY — connectivity is preserved for everything visible.
+        // (Without this, panning near a large town submits draw calls for all of
+        // its off-screen edges every frame, which is what caused the pan stutter.)
+        int prevX = toScreenX(xs[0], cameraX, blockScale, sw);
+        int prevY = toScreenY(zs[0], cameraZ, blockScale, sh);
+        for (int i = 1; i <= n; i++) {
+            int idx = i == n ? 0 : i;   // close the loop on the final iteration
+            int cx = toScreenX(xs[idx], cameraX, blockScale, sw);
+            int cy = toScreenY(zs[idx], cameraZ, blockScale, sh);
+
+            boolean offscreen = (prevX < 0 && cx < 0) || (prevX > sw && cx > sw)
+                             || (prevY < 0 && cy < 0) || (prevY > sh && cy > sh);
+            if (!offscreen) {
+                if (prevY == cy) {
+                    if (prevX != cx) ctx.drawHorizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), cy, borderColor);
+                    else ctx.fill(cx, cy, cx + 1, cy + 1, borderColor);   // 1px corner dot
+                } else if (prevX == cx) {
+                    ctx.drawVerticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
                 } else {
-                    ctx.fill(Math.min(x1, x2), Math.min(y1, y2),
-                             Math.max(x1, x2) + 1, Math.max(y1, y2) + 1, borderColor);
+                    // Defensive (Towny data is axis-aligned, so this is unreachable):
+                    // draw an L-bend to keep the loop connected without a diagonal.
+                    ctx.drawHorizontalLine(Math.min(prevX, cx), Math.max(prevX, cx), prevY, borderColor);
+                    ctx.drawVerticalLine(cx, Math.min(prevY, cy), Math.max(prevY, cy), borderColor);
                 }
             }
+            prevX = cx;
+            prevY = cy;
         }
     }
 
-    /**
-     * Scanline fill for rectilinear polygons.
-     *
-     * Uses static scratch arrays so zero heap objects are allocated per call —
-     * this was the primary cause of GC-induced stutter during map panning.
-     */
-    private static void scanlineFill(DrawContext ctx, int[] sx, int[] sy, int n,
-                                     int minY, int maxY, int color, int sw) {
-        // Collect unique Y breakpoints into scratchBandY (no TreeSet allocation).
-        scratchBandY = grow(scratchBandY, n + 1);
-        int yCount = 0;
-        outer:
-        for (int i = 0; i < n; i++) {
-            int y = sy[i];
-            if (y < minY || y > maxY) continue;
-            for (int j = 0; j < yCount; j++) {
-                if (scratchBandY[j] == y) continue outer;
-            }
-            scratchBandY[yCount++] = y;
+    /** Largest LOD level (coarsest) whose min-scale threshold is satisfied. */
+    private static int selectLod(double blockScale) {
+        for (int k = 0; k < LOD_MIN_SCALE.length; k++) {
+            if (blockScale >= LOD_MIN_SCALE[k]) return k;
         }
-        scratchBandY[yCount++] = maxY;
+        return LOD_MIN_SCALE.length - 1;
+    }
 
-        // Insertion sort — tiny array, always faster than Arrays.sort here.
-        for (int i = 1; i < yCount; i++) {
-            int key = scratchBandY[i], j = i - 1;
-            while (j >= 0 && scratchBandY[j] > key) { scratchBandY[j + 1] = scratchBandY[j--]; }
-            scratchBandY[j + 1] = key;
-        }
+    /** Draws the four sides of the screen bounding box — always visible, 4 calls. */
+    private static void renderBoundingBoxBorder(DrawContext ctx,
+                                                int x1, int y1, int x2, int y2,
+                                                int color, int sw, int sh) {
+        int bx1 = Math.max(-1, Math.min(x1, x2));
+        int bx2 = Math.min(sw,  Math.max(x1, x2));
+        int by1 = Math.max(-1, Math.min(y1, y2));
+        int by2 = Math.min(sh,  Math.max(y1, y2));
+        if (bx1 >= bx2 || by1 >= by2) return;
+        ctx.drawHorizontalLine(bx1, bx2, by1, color);
+        ctx.drawHorizontalLine(bx1, bx2, by2, color);
+        ctx.drawVerticalLine(bx1, by1, by2, color);
+        ctx.drawVerticalLine(bx2, by1, by2, color);
+    }
 
-        // Fill each horizontal band.
-        scratchBandX = grow(scratchBandX, n);
-        for (int bi = 1; bi < yCount; bi++) {
-            int yTop    = scratchBandY[bi - 1];
-            int yBottom = scratchBandY[bi];
-            if (yTop >= yBottom) continue;
+    private static void renderTinyTown(DrawContext ctx, int x1, int y1, int x2, int y2,
+                                       int color, int sw, int sh) {
+        if ((color >>> 24) == 0) return;
+        int x = Math.max(0, Math.min(sw - 1, (x1 + x2) / 2));
+        int y = Math.max(0, Math.min(sh - 1, (y1 + y2) / 2));
+        ctx.fill(x, y, x + 1, y + 1, color);
+    }
 
-            // Collect X intersections for this band (no ArrayList allocation).
-            int xCount = 0;
-            int ySample = yTop;
-            for (int i = 0; i < n; i++) {
-                int j  = (i + 1) % n;
-                int y1 = sy[i], y2 = sy[j];
-                if (y1 == y2) continue;
-                int yMin = Math.min(y1, y2), yMax = Math.max(y1, y2);
-                if (ySample >= yMin && ySample < yMax) scratchBandX[xCount++] = sx[i];
-            }
-
-            // Insertion sort the X values.
-            for (int i = 1; i < xCount; i++) {
-                int key = scratchBandX[i], j = i - 1;
-                while (j >= 0 && scratchBandX[j] > key) { scratchBandX[j + 1] = scratchBandX[j--]; }
-                scratchBandX[j + 1] = key;
-            }
-
-            for (int k = 0; k + 1 < xCount; k += 2) {
-                int xLeft = scratchBandX[k], xRight = scratchBandX[k + 1];
-                if (xRight > 0 && xLeft < sw) {
-                    ctx.fill(xLeft, yTop, xRight, yBottom, color);
-                }
-            }
+    private static void renderCachedFill(DrawContext ctx, RingGeometry ring, int color,
+                                         double cameraX, double cameraZ, double blockScale,
+                                         int sw, int sh) {
+        // fillData is a flat int[] with 4 values per rect: [minX, minZ, maxX, maxZ, ...]
+        int[] fd = ring.fillData();
+        for (int i = 0, len = fd.length; i < len; i += 4) {
+            int x1 = toScreenX(fd[i],     cameraX, blockScale, sw);
+            int y1 = toScreenY(fd[i + 1], cameraZ, blockScale, sh);
+            int x2 = toScreenX(fd[i + 2], cameraX, blockScale, sw);
+            int y2 = toScreenY(fd[i + 3], cameraZ, blockScale, sh);
+            int left   = Math.min(x1, x2), right  = Math.max(x1, x2);
+            int top    = Math.min(y1, y2), bottom = Math.max(y1, y2);
+            if (right <= 0 || left >= sw || bottom <= 0 || top >= sh) continue;
+            if (right <= left || bottom <= top) continue;
+            ctx.fill(left, top, right, bottom, color);
         }
     }
 
@@ -541,6 +534,50 @@ public class WorldMapRenderer {
         visibleTownScratch.add(town);
     }
 
+    /**
+     * Visits towns whose bounding box intersects the viewport, using the spatial
+     * index instead of a full scan.  {@code action} receives each town's display
+     * name and its precomputed lowercase key (no per-call string allocation) and
+     * returns true if it issued a request; iteration stops after {@code limit}
+     * such requests.  Called off the render path (every ~500 ms), on the client
+     * thread, using its own dedup scratch so it never disturbs render state.
+     */
+    public void forEachVisibleTownDetail(double worldLeft, double worldRight,
+                                         double worldTop, double worldBottom,
+                                         int limit, BiPredicate<String, String> action) {
+        TownRenderCache cache = townRenderCache();
+        int issued = 0;
+
+        int minCellX = floorToIndexCell(worldLeft);
+        int maxCellX = floorToIndexCell(worldRight);
+        int minCellZ = floorToIndexCell(worldTop);
+        int maxCellZ = floorToIndexCell(worldBottom);
+        long cellCount = (long) (maxCellX - minCellX + 1) * (long) (maxCellZ - minCellZ + 1);
+
+        // Same heuristic as visibleTowns(): if the viewport spans more index cells
+        // than the index has entries, a flat scan is cheaper than cell lookups.
+        if (cellCount > Math.max(1, cache.spatialIndex().size())) {
+            for (RenderTown town : cache.allTowns()) {
+                if (!town.intersectsWorld(worldLeft, worldRight, worldTop, worldBottom)) continue;
+                if (action.test(town.name(), town.key()) && ++issued >= limit) return;
+            }
+            return;
+        }
+
+        detailQuerySeen.clear();
+        for (int cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+            for (int cellX = minCellX; cellX <= maxCellX; cellX++) {
+                List<RenderTown> cellTowns = cache.spatialIndex().get(indexCellKey(cellX, cellZ));
+                if (cellTowns == null) continue;
+                for (RenderTown town : cellTowns) {
+                    if (!detailQuerySeen.add(town)) continue;   // town spans several cells
+                    if (!town.intersectsWorld(worldLeft, worldRight, worldTop, worldBottom)) continue;
+                    if (action.test(town.name(), town.key()) && ++issued >= limit) return;
+                }
+            }
+        }
+    }
+
     private TownRenderCache townRenderCache() {
         List<TownData> towns = api.getTowns();
         TownRenderCache cache = townRenderCache;
@@ -557,7 +594,7 @@ public class WorldMapRenderer {
         townCacheExecutor.execute(() -> {
             List<TownData> source = townCacheRequestedSource;
             try {
-                TownRenderCache built = buildTownRenderCache(source);
+                TownRenderCache built = buildTownRenderCache(source, townRenderCache);
                 if (api.getTowns() == source) {
                     townRenderCache = built;
                 }
@@ -570,12 +607,12 @@ public class WorldMapRenderer {
         });
     }
 
-    private static TownRenderCache buildTownRenderCache(List<TownData> towns) {
+    private static TownRenderCache buildTownRenderCache(List<TownData> towns, TownRenderCache previous) {
         Map<String, RenderTown> byName = new HashMap<>(Math.max(16, towns.size() * 2));
         Map<Long, List<RenderTown>> mutableSpatialIndex = new HashMap<>();
         ArrayList<RenderTown> allTowns = new ArrayList<>(towns.size());
         for (TownData town : towns) {
-            RenderTown renderTown = RenderTown.from(town);
+            RenderTown renderTown = reusableRenderTown(town, previous);
             allTowns.add(renderTown);
             byName.put(renderTown.key(), renderTown);
 
@@ -596,6 +633,14 @@ public class WorldMapRenderer {
         }
         return new TownRenderCache(towns, towns.size(), Map.copyOf(byName),
                 Map.copyOf(spatialIndex), List.copyOf(allTowns));
+    }
+
+    private static RenderTown reusableRenderTown(TownData town, TownRenderCache previous) {
+        RenderTown cached = previous.byName().get(town.key());
+        if (cached != null && cached.signature() == town.renderSignature()) {
+            return cached;
+        }
+        return RenderTown.from(town);
     }
 
     private static int floorToIndexCell(double worldCoord) {
@@ -625,14 +670,14 @@ public class WorldMapRenderer {
         }
     }
 
-    private record RenderTown(TownData data, String name, String key, List<RingGeometry> rings,
+    private record RenderTown(TownData data, String name, String key, long signature, List<RingGeometry> rings,
                               int minX, int maxX, int minZ, int maxZ) {
         private static RenderTown from(TownData town) {
             ArrayList<RingGeometry> rings = new ArrayList<>(town.polygonRings().size());
             for (int[][] ring : town.polygonRings()) {
                 rings.add(RingGeometry.from(ring));
             }
-            return new RenderTown(town, town.name(), town.name().toLowerCase(Locale.ROOT),
+            return new RenderTown(town, town.name(), town.key(), town.renderSignature(),
                     List.copyOf(rings), town.minX(), town.maxX(), town.minZ(), town.maxZ());
         }
 
@@ -641,33 +686,229 @@ public class WorldMapRenderer {
         }
     }
 
-    private record RingGeometry(int[] x, int[] z, int minX, int maxX, int minZ, int maxZ) {
+    // ── RingGeometry ─────────────────────────────────────────────────────────
+    //
+    // Stores pre-merged outline segments and pre-computed fill rects.
+    // Both are built once on the background cache thread; the render thread
+    // only iterates flat int[] arrays — zero allocations on the hot path.
+    // ── RingGeometry ─────────────────────────────────────────────────────────
+    //
+    // Research finding: squaremap polygon data already contains only corner
+    // vertices — every polygon edge is already a maximal axis-aligned segment.
+    // No collinear-vertex merging is needed or useful.
+    //
+    // Build strategy:
+    //   The raw outline (level 0) is the ordered corner vertices straight from
+    //   squaremap.  Coarser levels are produced by snapping every vertex to a
+    //   larger grid (LOD_GRID) and then dropping duplicate / collinear vertices.
+    //   Because snapping is a pure function of the world coordinate, axis-aligned
+    //   edges stay axis-aligned and shared town borders snap identically, so the
+    //   loop stays closed and connected at every level.
+    //
+    // Render strategy:
+    //   Walk the chosen level's ordered vertices and draw every edge in sequence
+    //   as a connected closed loop — no edge is ever skipped, so there are no
+    //   gaps at corners.  Coarser levels simply contain fewer vertices.
+    //
+    // Fill data: flat int[] [minX, minZ, maxX, maxZ, ...], 4 ints per rect.
+
+    private record RingGeometry(
+            int[][] lodX,     // lodX[level] = ordered X coords for that LOD level
+            int[][] lodZ,     // lodZ[level] = ordered Z coords for that LOD level
+            int[] fillData,
+            int minX, int maxX, int minZ, int maxZ) {
+
+        private int[] lodX(int level) { return lodX[level]; }
+        private int[] lodZ(int level) { return lodZ[level]; }
+
         private static RingGeometry from(int[][] ring) {
-            int[] x = new int[ring.length];
-            int[] z = new int[ring.length];
-            int minX = Integer.MAX_VALUE;
-            int maxX = Integer.MIN_VALUE;
-            int minZ = Integer.MAX_VALUE;
-            int maxZ = Integer.MIN_VALUE;
-            for (int i = 0; i < ring.length; i++) {
-                int worldX = ring[i].length > 0 ? ring[i][0] : 0;
-                int worldZ = ring[i].length > 1 ? ring[i][1] : 0;
-                x[i] = worldX;
-                z[i] = worldZ;
-                if (worldX < minX) minX = worldX;
-                if (worldX > maxX) maxX = worldX;
-                if (worldZ < minZ) minZ = worldZ;
-                if (worldZ > maxZ) maxZ = worldZ;
+            int n = ring.length;
+            int[] px = new int[n], pz = new int[n];
+            int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+            int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+            for (int i = 0; i < n; i++) {
+                px[i] = ring[i].length > 0 ? ring[i][0] : 0;
+                pz[i] = ring[i].length > 1 ? ring[i][1] : 0;
+                if (px[i] < minX) minX = px[i];
+                if (px[i] > maxX) maxX = px[i];
+                if (pz[i] < minZ) minZ = pz[i];
+                if (pz[i] > maxZ) maxZ = pz[i];
             }
-            if (ring.length == 0) {
-                minX = maxX = minZ = maxZ = 0;
+            if (n == 0) { minX = maxX = minZ = maxZ = 0; }
+
+            int levels = LOD_GRID.length;
+            int[][] lodX = new int[levels][];
+            int[][] lodZ = new int[levels][];
+
+            // Level 0: raw outline (clean up any incidental dup/collinear points)
+            int[][] base = cleanRectilinear(px, pz, px.length);
+            lodX[0] = base[0];
+            lodZ[0] = base[1];
+
+            // Coarser levels: snap to grid, then clean.  If a level collapses to a
+            // degenerate shape (< 4 pts), reuse the previous (finer) level so the
+            // town never disappears.
+            for (int k = 1; k < levels; k++) {
+                int grid = LOD_GRID[k];
+                int[] sx = new int[n], sz = new int[n];
+                for (int i = 0; i < n; i++) {
+                    sx[i] = snap(px[i], grid);
+                    sz[i] = snap(pz[i], grid);
+                }
+                int[][] simplified = cleanRectilinear(sx, sz, n);
+                if (simplified[0].length >= 4 && simplified[0].length < lodX[k - 1].length) {
+                    lodX[k] = simplified[0];
+                    lodZ[k] = simplified[1];
+                } else {
+                    // No further reduction (or degenerate) — share the finer level's arrays
+                    lodX[k] = lodX[k - 1];
+                    lodZ[k] = lodZ[k - 1];
+                }
             }
-            return new RingGeometry(x, z, minX, maxX, minZ, maxZ);
+
+            return new RingGeometry(lodX, lodZ,
+                                    buildFillData(px, pz, minX, maxX, minZ, maxZ),
+                                    minX, maxX, minZ, maxZ);
+        }
+    }
+
+    /** Rounds a coordinate to the nearest multiple of {@code grid} (symmetric). */
+    private static int snap(int v, int grid) {
+        return Math.floorDiv(v + (grid >> 1), grid) * grid;
+    }
+
+    /**
+     * Cleans an ordered rectilinear closed-loop vertex set:
+     *   1. drops consecutive duplicate points (incl. the wrap-around)
+     *   2. drops collinear vertices (where prev, cur, next share an X or a Z),
+     *      repeating until stable so flattened staircases fully collapse
+     * Returns {outX, outZ}.  Axis-alignment and closure are preserved.
+     */
+    private static int[][] cleanRectilinear(int[] x, int[] z, int n) {
+        // Pass 1: remove consecutive duplicates
+        int[] ax = new int[n], az = new int[n];
+        int m = 0;
+        for (int i = 0; i < n; i++) {
+            if (m > 0 && ax[m - 1] == x[i] && az[m - 1] == z[i]) continue;
+            ax[m] = x[i]; az[m] = z[i]; m++;
+        }
+        while (m > 1 && ax[m - 1] == ax[0] && az[m - 1] == az[0]) m--;   // wrap dup
+
+        // Pass 2: iteratively drop collinear vertices on the closed loop
+        boolean changed = true;
+        while (changed && m > 3) {
+            changed = false;
+            int w = 0;
+            int[] bx = new int[m], bz = new int[m];
+            for (int i = 0; i < m; i++) {
+                int prev = (i - 1 + m) % m, next = (i + 1) % m;
+                boolean colX = ax[prev] == ax[i] && ax[i] == ax[next];
+                boolean colZ = az[prev] == az[i] && az[i] == az[next];
+                if (colX || colZ) { changed = true; continue; }   // drop this vertex
+                bx[w] = ax[i]; bz[w] = az[i]; w++;
+            }
+            if (changed) { ax = bx; az = bz; m = w; }
         }
 
-        private int length() {
-            return x.length;
+        return new int[][]{ Arrays.copyOf(ax, m), Arrays.copyOf(az, m) };
+    }
+
+    /**
+     * Builds fill data as a flat int[] with 4 ints per rect: [minX, minZ, maxX, maxZ, ...].
+     * Uses Arrays.sort for O(n log n) band deduplication instead of the previous O(n²) scan.
+     */
+    private static int[] buildFillData(int[] x, int[] z, int minX, int maxX, int minZ, int maxZ) {
+        int n = x.length;
+        if (n < 3 || minX == maxX || minZ == maxZ) return new int[0];
+
+        // Deduplicate Z band boundaries: sort a copy, then take unique values — O(n log n)
+        int[] sortedZ = Arrays.copyOf(z, n);
+        Arrays.sort(sortedZ);
+        int bandCount = 0;
+        int[] bands = new int[n + 1];
+        for (int val : sortedZ) {
+            if (bandCount == 0 || bands[bandCount - 1] != val) bands[bandCount++] = val;
         }
+        if (bands[bandCount - 1] != maxZ) bands[bandCount++] = maxZ;
+        // bands[] already sorted by Arrays.sort — no second pass needed
+
+        int[] intersections = new int[n];
+        int[] temp = new int[Math.max(16, n * 2)];  // generous initial cap, no FillRect objects
+        int tempLen = 0;
+
+        for (int bi = 1; bi < bandCount; bi++) {
+            int zTop    = bands[bi - 1];
+            int zBottom = bands[bi];
+            if (zTop >= zBottom) continue;
+
+            int xCount = 0;
+            for (int i = 0; i < n; i++) {
+                int j = (i + 1) % n;
+                int z1 = z[i], z2 = z[j];
+                if (z1 == z2) continue;
+                int lo = Math.min(z1, z2), hi = Math.max(z1, z2);
+                if (zTop >= lo && zTop < hi) intersections[xCount++] = x[i];
+            }
+
+            // Sort intersections (insertion sort — xCount is usually very small)
+            for (int i = 1; i < xCount; i++) {
+                int key = intersections[i], j = i - 1;
+                while (j >= 0 && intersections[j] > key) { intersections[j + 1] = intersections[j--]; }
+                intersections[j + 1] = key;
+            }
+
+            for (int i = 0; i + 1 < xCount; i += 2) {
+                int xLeft = intersections[i], xRight = intersections[i + 1];
+                if (xLeft == xRight) continue;
+                if (tempLen + 4 > temp.length) temp = Arrays.copyOf(temp, temp.length * 2);
+                temp[tempLen++] = Math.max(minX, xLeft);
+                temp[tempLen++] = zTop;
+                temp[tempLen++] = Math.min(maxX, xRight);
+                temp[tempLen++] = zBottom;
+            }
+        }
+        if (tempLen == 0) return new int[0];
+
+        // Merge vertically adjacent rects that share the same X extent.
+        // Sort by (minX, maxX) so identical-width columns are grouped together;
+        // within each group the scanline order is already Z-ascending, so adjacent
+        // bands that have the same left/right edge collapse into one tall rect.
+        // For a rectangular town this turns N band-rects into 1 draw call.
+        int numRects = tempLen / 4;
+        if (numRects > 1) {
+            // Pack (minX + 50000, maxX + 50000, rectIndex) as a sort key.
+            // Coords ≤ 100 k blocks → +50000 fits in 17 bits (2^17 = 131072 > 90000).
+            // 17 + 17 + 17 = 51 bits — no overflow.
+            long[] rsk = new long[numRects];
+            for (int i = 0; i < numRects; i++) {
+                rsk[i] = ((long)(temp[i * 4] + 50000) << 34)
+                        | ((long)(temp[i * 4 + 2] + 50000) << 17)
+                        | i;
+            }
+            Arrays.sort(rsk, 0, numRects);
+
+            int[] merged = new int[tempLen];
+            int mLen = 0;
+            int ox1 = Integer.MIN_VALUE, oz1 = 0, ox2 = 0, oz2 = 0;
+            for (long rk : rsk) {
+                int ri  = (int)(rk & 0x1FFFF) * 4;
+                int rx1 = temp[ri], rz1 = temp[ri + 1], rx2 = temp[ri + 2], rz2 = temp[ri + 3];
+                if (rx1 == ox1 && rx2 == ox2 && rz1 == oz2) {
+                    oz2 = rz2;  // extend current rect downward
+                } else {
+                    if (ox1 != Integer.MIN_VALUE) {
+                        merged[mLen++] = ox1; merged[mLen++] = oz1;
+                        merged[mLen++] = ox2; merged[mLen++] = oz2;
+                    }
+                    ox1 = rx1; oz1 = rz1; ox2 = rx2; oz2 = rz2;
+                }
+            }
+            merged[mLen++] = ox1; merged[mLen++] = oz1;
+            merged[mLen++] = ox2; merged[mLen++] = oz2;
+            return Arrays.copyOf(merged, mLen);
+        }
+
+        return Arrays.copyOf(temp, tempLen);
     }
 
     // ── Nation capital markers ───────────────────────────────────────────────
@@ -732,7 +973,7 @@ public class WorldMapRenderer {
 
             if (dotX < -10 || dotX > sw + 10 || dotY < -10 || dotY > sh + 10) continue;
 
-            int color = TownyMapMod.playerDotColor(p.name());
+            int color = TownyMapMod.playerDotColor(p.name(), p.key());
             if ((color >>> 24) == 0) continue;
             ctx.fill(dotX - DOT_HALF, dotY - DOT_HALF,
                      dotX + DOT_HALF, dotY + DOT_HALF,

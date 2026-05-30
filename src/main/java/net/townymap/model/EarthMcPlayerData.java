@@ -12,9 +12,11 @@ public record EarthMcPlayerData(
         boolean king,
         double balance,
         int friendCount,
-        String lastOnline
+        String lastOnline,
+        long lastOnlineMs,
+        String registered
 ) {
     public EarthMcPlayerData(String name, String uuid) {
-        this(name, uuid, "", "", "", false, false, false, false, 0, 0, "");
+        this(name, uuid, "", "", "", false, false, false, false, 0, 0, "", 0L, "");
     }
 }

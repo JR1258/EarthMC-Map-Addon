@@ -320,19 +320,30 @@ public class EarthMcApiClient {
         }
 
         String lastOnline = "";
+        long lastOnlineMs = 0L;
+        String registered = "";
         if (p.has("timestamps") && p.get("timestamps").isJsonObject()) {
             JsonObject ts = p.getAsJsonObject("timestamps");
             if (ts.has("lastOnline") && !ts.get("lastOnline").isJsonNull()) {
-                long ms = ts.get("lastOnline").getAsLong();
-                lastOnline = Instant.ofEpochMilli(ms)
+                lastOnlineMs = ts.get("lastOnline").getAsLong();
+                lastOnline = Instant.ofEpochMilli(lastOnlineMs)
                         .atZone(ZoneOffset.UTC)
                         .toLocalDate()
                         .format(DATE_FMT);
             }
+            if (ts.has("registered") && !ts.get("registered").isJsonNull()) {
+                long regMs = ts.get("registered").getAsLong();
+                if (regMs > 0) {
+                    registered = Instant.ofEpochMilli(regMs)
+                            .atZone(ZoneOffset.UTC)
+                            .toLocalDate()
+                            .format(DATE_FMT);
+                }
+            }
         }
 
         return new EarthMcPlayerData(name, uuid, town, nation, formatted,
-                online, npc, mayor, king, balance, friends, lastOnline);
+                online, npc, mayor, king, balance, friends, lastOnline, lastOnlineMs, registered);
     }
 
     private EarthMcNationData parseNation(JsonObject n) {

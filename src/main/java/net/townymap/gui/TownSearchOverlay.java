@@ -13,8 +13,12 @@ import net.townymap.model.PlayerHistoryEntry;
 import net.townymap.model.PlayerMarker;
 import net.townymap.model.TownData;
 import net.townymap.model.TownPopupData;
+import net.townymap.util.DiscordUrl;
 import org.lwjgl.glfw.GLFW;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -31,11 +35,13 @@ public final class TownSearchOverlay {
     private static final int ROW_HEIGHT = 20;
     private static final int MAX_RESULTS = 7;
     private static final int MAX_PER_TYPE = 3;
-    private static final int MAX_INFO_LINES = 8;
+    private static final int MAX_INFO_LINES = 11;
     private static final int BG = 0xD8101010;
     private static final int BORDER = 0xFF333333;
     private static final int ACTIVE_BORDER = 0xFFDDDDDD;
     private static final int HOVER = 0x553BFF3B;
+    private static final DateTimeFormatter DATE_FMT =
+            DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH);
 
     private static boolean focused;
     private static String query = "";
@@ -56,6 +62,11 @@ public final class TownSearchOverlay {
     private static int infoDiscordX, infoDiscordY, infoDiscordW, infoDiscordH;
     private static boolean infoDiscordVisible;
     private static String infoDiscordUrl = "";
+    // Clickable name spans inside the selected-info panel (Mayor/King → player,
+    // Nation/Capital → nation/town).  Rebuilt every render; consumed on click.
+    private static final List<InfoLink> infoLinks = new ArrayList<>();
+    private static final int LINK_COLOR = 0xFF8FB7FF;
+    private static final int LINK_HOVER_COLOR = 0xFFFFE066;
 
     private TownSearchOverlay() {}
 
@@ -82,18 +93,20 @@ public final class TownSearchOverlay {
         ctx.drawText(tr, display, x + 7, y + 5, color, true);
         renderFavorites(ctx, tr, favoritesX(x), y, sw, towns, favoriteTowns);
 
-        if (!focused && query.isEmpty()) {
-            return;
-        }
-
-        List<Result> results = results(towns, players, townDetails, apiPlayers,
-                playerDetails, playerHistory, apiNations, nationDetails);
-        for (int i = 0; i < results.size(); i++) {
-            Result result = results.get(i);
-            int rowY = resultRowY(y, i);
-            ctx.fill(x - 1, rowY - 1, x + WIDTH + 1, rowY + ROW_HEIGHT + 1, BORDER);
-            ctx.fill(x, rowY, x + WIDTH, rowY + ROW_HEIGHT, i == selected ? HOVER : BG);
-            ctx.drawText(tr, trimToWidth(tr, result.label(), WIDTH - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
+        // The results dropdown shows only while the bar is focused (actively
+        // searching); once a result is chosen the info panel takes over.  The two
+        // are mutually exclusive — focusing clears the selection, selecting unfocuses
+        // — so they are never on screen at the same time.
+        if (focused) {
+            List<Result> results = results(towns, players, townDetails, apiPlayers,
+                    playerDetails, playerHistory, apiNations, nationDetails);
+            for (int i = 0; i < results.size(); i++) {
+                Result result = results.get(i);
+                int rowY = resultRowY(y, i);
+                ctx.fill(x - 1, rowY - 1, x + WIDTH + 1, rowY + ROW_HEIGHT + 1, BORDER);
+                ctx.fill(x, rowY, x + WIDTH, rowY + ROW_HEIGHT, i == selected ? HOVER : BG);
+                ctx.drawText(tr, trimToWidth(tr, result.label(), WIDTH - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
+            }
         }
         renderSelectedInfo(ctx, tr, sw, sh,
                 towns, players, townDetails, playerDetails, playerHistory, nationDetails);
@@ -116,14 +129,22 @@ public final class TownSearchOverlay {
             TownInfoOverlay.openDiscord(infoDiscordUrl);
             return ClickResult.consumedResult();
         }
+        // Clicking a name inside the info panel re-searches for that entity.
+        for (InfoLink link : infoLinks) {
+            if (link.contains(mouseX, mouseY)) {
+                activateLink(link);
+                return ClickResult.consumedResult();
+            }
+        }
 
         if (inside(mouseX, mouseY, x, y, WIDTH, ROW_HEIGHT)) {
             focused = true;
             selected = 0;
+            clearSelection();   // hide the info panel while typing a new search
             return ClickResult.consumedResult();
         }
 
-        if (focused || !query.isEmpty()) {
+        if (focused) {
             List<Result> results = results(towns, players, townDetails, apiPlayers,
                     playerDetails, playerHistory, apiNations, nationDetails);
             for (int i = 0; i < results.size(); i++) {
@@ -481,6 +502,41 @@ public final class TownSearchOverlay {
         selectedName = "";
         infoDiscordVisible = false;
         infoDiscordUrl = "";
+        infoLinks.clear();
+    }
+
+    /**
+     * Hides the search result info panel.  Called when the right-click town popup
+     * (TownInfoOverlay) opens, so the two info panels are never shown at once.
+     */
+    public static void dismissSelection() {
+        clearSelection();
+    }
+
+    /**
+     * Switches the info panel to a name clicked inside it (Mayor/King → that
+     * player, Nation/Capital → that nation/town), mirroring a search-bar lookup:
+     * the query is updated so detail fetching kicks in, and the panel re-renders
+     * for the clicked entity.  The camera is left where it is.
+     */
+    private static void activateLink(InfoLink link) {
+        openSearch(link.type(), link.name());
+    }
+
+    /**
+     * Opens the search info panel for a given entity, as if it had been typed and
+     * selected in the search bar.  Used by the in-panel name links and by the
+     * right-click town popup's clickable names.
+     */
+    public static void openSearch(String type, String name) {
+        if (name == null || name.isBlank()) return;
+        query = name;
+        selected = 0;
+        focused = false;
+        selectedType = type;
+        selectedName = name;
+        infoLinks.clear();
+        invalidateResults();
     }
 
     private static void renderSelectedInfo(DrawContext ctx, TextRenderer tr, int sw, int sh,
@@ -491,8 +547,9 @@ public final class TownSearchOverlay {
                                            Map<String, EarthMcNationData> nationDetails) {
         infoDiscordVisible = false;
         infoDiscordUrl = "";
+        infoLinks.clear();
         if (selectedName.isBlank()) return;
-        List<String> lines = selectedInfo(towns, players, townDetails, playerDetails,
+        List<InfoRow> lines = selectedInfo(towns, players, townDetails, playerDetails,
                 playerHistory, nationDetails);
         if (lines.isEmpty()) return;
         String discordUrl = selectedDiscordUrl(townDetails, nationDetails);
@@ -502,7 +559,7 @@ public final class TownSearchOverlay {
         }
 
         int maxW = 0;
-        for (String line : lines) maxW = Math.max(maxW, tr.getWidth(line));
+        for (InfoRow row : lines) maxW = Math.max(maxW, rowWidth(tr, row));
         int boxW = Math.min(Math.max(WIDTH, maxW + 16), Math.max(WIDTH, sw - 24));
         int buttonRowHeight = showDiscordButton ? ROW_HEIGHT + 7 : 0;
         int boxH = lines.size() * 12 + 14 + buttonRowHeight;
@@ -512,9 +569,21 @@ public final class TownSearchOverlay {
         ctx.fill(x - 1, y - 1, x + boxW + 1, y + boxH + 1, BORDER);
         ctx.fill(x, y, x + boxW, y + boxH, BG);
 
+        int mx = scaledMouseX();
+        int my = scaledMouseY();
         int ty = y + 7;
-        for (String line : lines) {
-            ctx.drawText(tr, trimToWidth(tr, line, boxW - 14), x + 7, ty, 0xFFFFFFFF, true);
+        for (InfoRow row : lines) {
+            if (row.hasLink()) {
+                int prefixW = tr.getWidth(row.prefix());
+                ctx.drawText(tr, row.prefix(), x + 7, ty, 0xFFFFFFFF, true);
+                int nameX = x + 7 + prefixW;
+                int nameW = tr.getWidth(row.name());
+                boolean hovered = mx >= nameX && mx <= nameX + nameW && my >= ty - 1 && my <= ty + 9;
+                ctx.drawText(tr, row.name(), nameX, ty, hovered ? LINK_HOVER_COLOR : LINK_COLOR, true);
+                infoLinks.add(new InfoLink(nameX, ty - 1, nameW, 10, row.linkType(), row.name()));
+            } else {
+                ctx.drawText(tr, trimToWidth(tr, row.prefix(), boxW - 14), x + 7, ty, 0xFFFFFFFF, true);
+            }
             ty += 12;
         }
         if (showDiscordButton) {
@@ -545,11 +614,11 @@ public final class TownSearchOverlay {
         return "";
     }
 
-    private static List<String> selectedInfo(List<TownData> towns, List<PlayerMarker> players,
-                                             Map<String, TownPopupData> townDetails,
-                                             Map<String, EarthMcPlayerData> playerDetails,
-                                             Map<String, PlayerHistoryEntry> playerHistory,
-                                             Map<String, EarthMcNationData> nationDetails) {
+    private static List<InfoRow> selectedInfo(List<TownData> towns, List<PlayerMarker> players,
+                                              Map<String, TownPopupData> townDetails,
+                                              Map<String, EarthMcPlayerData> playerDetails,
+                                              Map<String, PlayerHistoryEntry> playerHistory,
+                                              Map<String, EarthMcNationData> nationDetails) {
         if ("town".equals(selectedType)) {
             for (TownData town : towns) {
                 if (town.name().equalsIgnoreCase(selectedName)) {
@@ -561,24 +630,24 @@ public final class TownSearchOverlay {
         }
         if ("nation".equals(selectedType)) {
             EarthMcNationData details = nationDetails.get(selectedName.toLowerCase(Locale.ROOT));
-            ArrayList<String> lines = new ArrayList<>();
-            lines.add("§f§lNation: " + selectedName);
+            ArrayList<InfoRow> lines = new ArrayList<>();
+            lines.add(InfoRow.text("§f§lNation: " + selectedName));
             if (details == null) {
-                lines.add("§7Details: §fChecking...");
+                lines.add(InfoRow.text("§7Details: §fChecking..."));
                 return List.copyOf(lines);
             }
-            if (!details.capitalName().isBlank()) lines.add("§7Capital: §f" + details.capitalName());
-            if (!details.kingName().isBlank()) lines.add("§7King: §f" + details.kingName());
-            if (!details.founded().isBlank()) lines.add("§7Founded: §f" + details.founded());
-            if (details.townCount() > 0) lines.add("§7Towns: §f" + details.townCount());
+            if (!details.capitalName().isBlank()) lines.add(InfoRow.link("§7Capital: §f", details.capitalName(), "town"));
+            if (!details.kingName().isBlank()) lines.add(InfoRow.link("§7King: §f", details.kingName(), "player"));
+            if (!details.founded().isBlank()) lines.add(InfoRow.text("§7Founded: §f" + details.founded()));
+            if (details.townCount() > 0) lines.add(InfoRow.text("§7Towns: §f" + details.townCount()));
             if (details.residentCount() > 0) {
-                lines.add("§7Residents: §f" + details.residentCount()
-                        + " §7(Bonus: §f" + nationBonus(details.residentCount()) + "§7)");
+                lines.add(InfoRow.text("§7Residents: §f" + details.residentCount()
+                        + " §7(Bonus: §f" + nationBonus(details.residentCount()) + "§7)"));
             }
-            if (details.chunkCount() > 0) lines.add("§7Chunks: §f" + details.chunkCount());
-            lines.add("§7Gold: §f" + formatGold(details.balance()));
-            if (details.outlawCount() > 0) lines.add("§7Outlaws: §f" + details.outlawCount());
-            if (details.enemyCount() > 0) lines.add("§7Enemies: §f" + details.enemyCount());
+            if (details.chunkCount() > 0) lines.add(InfoRow.text("§7Chunks: §f" + details.chunkCount()));
+            lines.add(InfoRow.text("§7Gold: §f" + formatGold(details.balance())));
+            if (details.outlawCount() > 0) lines.add(InfoRow.text("§7Outlaws: §f" + details.outlawCount()));
+            if (details.enemyCount() > 0) lines.add(InfoRow.text("§7Enemies: §f" + details.enemyCount()));
             return List.copyOf(lines);
         }
         if (!"player".equals(selectedType)) return List.of();
@@ -588,51 +657,71 @@ public final class TownSearchOverlay {
         PlayerHistoryEntry history = playerHistory.get(selectedName.toLowerCase(Locale.ROOT));
         String status = playerStatus(details, marker);
 
-        ArrayList<String> lines = new ArrayList<>();
-        lines.add("§f§lPlayer: " + selectedName);
-        lines.add("§7Status: §f" + status);
-        if (marker != null) lines.add("§7Location: §f" + marker.x() + ", " + marker.z());
+        ArrayList<InfoRow> lines = new ArrayList<>();
+        lines.add(InfoRow.text("§f§lPlayer: " + selectedName));
+        lines.add(InfoRow.text("§7Status: §f" + status));
+        if (marker != null) lines.add(InfoRow.text("§7Location: §f" + marker.x() + ", " + marker.z()));
         else if (history != null) {
-            lines.add("§7Last seen: §f" + history.x() + ", " + history.z());
-            lines.add("§7Seen: §f" + ageLabel(history.lastSeenMs()));
+            lines.add(InfoRow.text("§7Last seen: §f" + history.x() + ", " + history.z()));
+            lines.add(InfoRow.text("§7On map: §f" + dateWithAgo(history.lastSeenMs())));
         }
         if (details == null) {
-            lines.add("§7Details: §fChecking...");
+            lines.add(InfoRow.text("§7Details: §fChecking..."));
             return List.copyOf(lines);
         }
-        if (!details.townName().isBlank()) lines.add("§7Town: §f" + details.townName());
-        if (!details.nationName().isBlank()) lines.add("§7Nation: §f" + details.nationName());
+        if (!details.townName().isBlank()) lines.add(InfoRow.link("§7Town: §f", details.townName(), "town"));
+        if (!details.nationName().isBlank()) lines.add(InfoRow.link("§7Nation: §f", details.nationName(), "nation"));
         if (details.king()) {
-            lines.add("§7Role: §fKing");
+            lines.add(InfoRow.text("§7Role: §fKing"));
         } else if (details.mayor()) {
-            lines.add("§7Role: §fMayor");
+            lines.add(InfoRow.text("§7Role: §fMayor"));
         }
-        if (!details.lastOnline().isBlank() && marker == null) {
-            lines.add("§7Last online: §f" + details.lastOnline());
+        lines.add(InfoRow.text("§7Gold: §f" + formatGold(details.balance())));
+        if (!details.registered().isBlank()) lines.add(InfoRow.text("§7Registered: §f" + details.registered()));
+        if (marker == null) {
+            if (details.lastOnlineMs() > 0) {
+                lines.add(InfoRow.text("§7Last online: §f" + details.lastOnline()
+                        + " §7(" + ageLabel(details.lastOnlineMs()) + ")"));
+            } else if (!details.lastOnline().isBlank()) {
+                lines.add(InfoRow.text("§7Last online: §f" + details.lastOnline()));
+            }
         }
         return List.copyOf(lines);
     }
 
-    private static List<String> townInfo(TownData town, TownPopupData details,
-                                         Map<String, EarthMcNationData> nationDetails) {
-        ArrayList<String> lines = new ArrayList<>();
-        lines.add("§f§lTown: " + town.name());
+    private static List<InfoRow> townInfo(TownData town, TownPopupData details,
+                                          Map<String, EarthMcNationData> nationDetails) {
+        ArrayList<InfoRow> lines = new ArrayList<>();
+        lines.add(InfoRow.text("§f§lTown: " + town.name()));
         if (details == null) {
-            lines.add("§7Chunks: §f" + town.approximateChunks());
-            lines.add("§7Details: §fChecking...");
+            lines.add(InfoRow.text("§7Chunks: §f" + town.approximateChunks()));
+            lines.add(InfoRow.text("§7Details: §fChecking..."));
             return List.copyOf(lines);
         }
-        if (!details.nationName().isBlank()) lines.add("§7Nation: §f" + details.nationName());
-        if (!details.mayor().isBlank()) lines.add("§7Mayor: §f" + details.mayor());
+        if (!details.nationName().isBlank()) lines.add(InfoRow.link("§7Nation: §f", details.nationName(), "nation"));
+        if (!details.mayor().isBlank()) lines.add(InfoRow.link("§7Mayor: §f", details.mayor(), "player"));
         int possibleChunks = possibleTownChunks(details, nationDetails);
         String sizeColor = details.isOverClaimed() ? "§c" : "§f";
-        lines.add("§7Chunks: " + sizeColor + details.numChunks() + " / " + possibleChunks);
-        if (!details.founded().isBlank()) lines.add("§7Founded: §f" + details.founded());
-        lines.add("§7Residents: §f" + details.residentCount());
-        lines.add("§7Gold: §f" + formatGold(details.balance()));
-        lines.add("§7Open: §f" + yesNo(details.isOpen()));
-        lines.add("§7Public: §f" + yesNo(details.isPublic()));
+        lines.add(InfoRow.text("§7Chunks: " + sizeColor + details.numChunks() + " / " + possibleChunks));
+        if (!details.founded().isBlank()) lines.add(InfoRow.text("§7Founded: §f" + details.founded()));
+        lines.add(InfoRow.text("§7Residents: §f" + details.residentCount()));
+        lines.add(InfoRow.text("§7Gold: §f" + formatGold(details.balance())));
+        lines.add(InfoRow.text("§7Open: §f" + yesNo(details.isOpen())));
+        lines.add(InfoRow.text("§7Public: §f" + yesNo(details.isPublic())));
         return List.copyOf(lines);
+    }
+
+    /** "MMM d, yyyy (5h ago)" — absolute date plus relative age for a timestamp. */
+    private static String dateWithAgo(long timestampMs) {
+        if (timestampMs <= 0) return "Unknown";
+        String date = Instant.ofEpochMilli(timestampMs).atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FMT);
+        return date + " §7(" + ageLabel(timestampMs) + ")";
+    }
+
+    private static int rowWidth(TextRenderer tr, InfoRow row) {
+        int w = tr.getWidth(row.prefix());
+        if (row.hasLink()) w += tr.getWidth(row.name());
+        return w;
     }
 
     private static String yesNo(boolean value) {
@@ -644,16 +733,7 @@ public final class TownSearchOverlay {
     }
 
     private static String normalizeDiscordUrl(String discord) {
-        if (discord == null || discord.isBlank()) return "";
-        String value = discord.trim();
-        String lower = value.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("http://") || lower.startsWith("https://")) return value;
-        if (lower.startsWith("discord.gg/") || lower.startsWith("discord.com/")
-                || lower.startsWith("www.discord.gg/") || lower.startsWith("www.discord.com/")) {
-            return "https://" + value;
-        }
-        if (!value.contains("/") && !value.contains(".")) return "https://discord.gg/" + value;
-        return "https://" + value;
+        return DiscordUrl.normalize(discord);
     }
 
     private static int nationBonus(int residents) {
@@ -794,6 +874,26 @@ public final class TownSearchOverlay {
     }
 
     private record Result(String label, MapJumpTarget target, int score, String type, String name) {}
+
+    /** A clickable name span in the info panel: bounds + what to search for. */
+    private record InfoLink(int x, int y, int w, int h, String type, String name) {
+        boolean contains(double mx, double my) {
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        }
+    }
+
+    /**
+     * One line of the selected-info panel.  {@code prefix} is the formatted label
+     * text; if {@code linkType} is non-empty, {@code name} is drawn after it as a
+     * clickable span that re-searches for that town/nation/player.
+     */
+    private record InfoRow(String prefix, String name, String linkType) {
+        static InfoRow text(String formatted) { return new InfoRow(formatted, "", ""); }
+        static InfoRow link(String prefix, String name, String linkType) {
+            return new InfoRow(prefix, name, linkType);
+        }
+        boolean hasLink() { return !linkType.isEmpty() && !name.isEmpty(); }
+    }
 
     public record ClickResult(boolean consumed, MapJumpTarget target) {
         public static ClickResult none() {

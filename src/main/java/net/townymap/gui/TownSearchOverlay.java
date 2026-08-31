@@ -862,7 +862,10 @@ public final class TownSearchOverlay {
         if (y < 100) y += 2000;   // two-digit year → 20xx
         if (d < 1 || d > 31 || mo < 1 || mo > 12) return 0;
         int yyyymmdd = y * 10000 + mo * 100 + d;
-        return yyyymmdd >= net.townymap.api.ArchiveClient.MIN_DATE ? yyyymmdd : 0;
+        // Per world: the Moon launched on 2026-08-30, so Terra Nostra's floor would accept dates it has
+        // no captures for and send the user to an empty snapshot.
+        int floor = net.townymap.api.ArchiveClient.minDateFor(net.townymap.TownyMapMod.activeWorldKey());
+        return yyyymmdd >= floor ? yyyymmdd : 0;
     }
 
     private static String archiveDateLabel(int yyyymmdd) {

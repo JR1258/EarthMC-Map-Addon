@@ -36,10 +36,21 @@ public final class ArchiveClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("TownyMapAddon");
     private static final String UA = "JR1258/EarthMC-Map-Addon archive";
-    private static final String MARKERS_URL = "https://map.earthmc.net/tiles/minecraft_overworld/markers.json";
+    private static final String MARKERS_URL_FORMAT = "https://map.earthmc.net/tiles/%s/markers.json";
 
     /** The first date Terra Nostra's map existed — earlier queries have no snapshot to find. */
     public static final int MIN_DATE = 20260417;
+
+    /**
+     * The first date the Moon existed. It launched on 2026-08-30, and Wayback holds nothing for it before
+     * the first capture was requested by hand — nothing crawls that URL on its own.
+     */
+    public static final int MIN_DATE_MOON = 20260830;
+
+    /** Earliest date worth asking about for a world, so the search bar can reject the rest up front. */
+    public static int minDateFor(String worldKey) {
+        return net.townymap.TownyMapMod.WORLD_MOON.equals(worldKey) ? MIN_DATE_MOON : MIN_DATE;
+    }
 
     /**
      * A resolved snapshot: the towns, their historical popup info (mayor/residents/founded/etc. as they
@@ -77,7 +88,13 @@ public final class ArchiveClient {
      * captured date is read back from the final redirected URL.
      */
     public Snapshot fetchSnapshot(int yyyymmdd) {
-        String url = "https://web.archive.org/web/" + yyyymmdd + "id_/" + MARKERS_URL;
+        return fetchSnapshot(yyyymmdd, net.townymap.TownyMapMod.WORLD_OVERWORLD);
+    }
+
+    /** As above, for one squaremap world. The Moon has its own captures and its own history. */
+    public Snapshot fetchSnapshot(int yyyymmdd, String worldKey) {
+        String markers = String.format(MARKERS_URL_FORMAT, worldKey);
+        String url = "https://web.archive.org/web/" + yyyymmdd + "id_/" + markers;
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(40))

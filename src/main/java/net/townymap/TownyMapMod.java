@@ -2253,12 +2253,13 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void onActiveWorldChanged(String key) {
         LOGGER.info("[TownyMap] Map world -> {}", key);
-        // The archive holds an Earth-only snapshot, and getTowns() hands it out no matter which world is
-        // shown - so leaving Earth with one loaded would paint Earth borders over Moon terrain. Every
-        // world switch funnels through here, so dropping it once covers the toggle and the settings screen.
-        if (!WORLD_OVERWORLD.equals(key) && isArchiveMode()) {
+        // getTowns() hands the archive snapshot out whatever world is shown, so a snapshot loaded for one
+        // world would paint its borders over the other's terrain. Switching worlds closes it rather than
+        // silently mixing the two; the new world can be archived on its own from its own captures.
+        if (isArchiveMode() && !key.equals(archiveWorldKey)) {
             exitArchive();
-            sendFeedback("Archive closed - it only covers Terra Nostra.", Formatting.YELLOW);
+            sendFeedback("Archive closed - it covered " + worldDisplayName(archiveWorldKey) + ".",
+                    Formatting.YELLOW);
         }
         // Moon and Terra Nostra coordinates overlap numerically, so nothing cached for one world may be
         // reused for the other. Towns and tiles are keyed by world and so survive; what follows is the
@@ -2499,7 +2500,7 @@ public class TownyMapMod implements ClientModInitializer {
     private static void renderArchiveNav(DrawContext ctx, MinecraftClient client, int screenW) {
         net.minecraft.client.font.TextRenderer tr = client.textRenderer;
         int req = archiveRequestedDate > 0 ? archiveRequestedDate : archiveActualDate;
-        boolean atMin = req <= net.townymap.api.ArchiveClient.MIN_DATE;
+        boolean atMin = req <= net.townymap.api.ArchiveClient.minDateFor(archiveWorldKey);
         boolean atMax = req >= todayInt();
 
         int padX = 6, gap = 4, h = 13, y = archiveBannerY2 + 3;
@@ -2555,7 +2556,8 @@ public class TownyMapMod implements ClientModInitializer {
         if (base <= 0) return;
         java.time.LocalDate d = java.time.LocalDate.of(base / 10000, (base / 100) % 100, base % 100).plusDays(deltaDays);
         int target = d.getYear() * 10000 + d.getMonthValue() * 100 + d.getDayOfMonth();
-        target = Math.max(net.townymap.api.ArchiveClient.MIN_DATE, Math.min(todayInt(), target));
+        target = Math.max(net.townymap.api.ArchiveClient.minDateFor(archiveWorldKey),
+                Math.min(todayInt(), target));
         if (target == base) return;   // already at the clamp bound in that direction
         enterArchive(target);
     }
@@ -2954,6 +2956,8 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile boolean archiveLoading = false;
     private static volatile String archiveStatus = "";     // banner text while active/loading, else blank
     private static volatile int archiveActualDate = 0;
+    /** Which world the loaded snapshot describes, so a world switch knows whether it still applies. */
+    private static volatile String archiveWorldKey = WORLD_OVERWORLD;
     private static volatile int archiveRequestedDate = 0;   // last date asked for; the ± arrows step from this
     // Nations as they were on the archived date, synthesized from the snapshot's town tooltips. Swapped in
     // for the live nation data while archive mode is active so stars/search/hover show that date's nations.
@@ -3049,20 +3053,14 @@ public class TownyMapMod implements ClientModInitializer {
      */
     public static void enterArchive(int yyyymmdd) {
         if (apiClient == null || archiveLoading) return;
-        // The other half of the archive/Moon exclusion (see onActiveWorldChanged): snapshots are Terra
-        // Nostra only, so loading one from the Moon has to bring the map back to Earth first.
-        // PINS Earth rather than selecting Auto: in Auto this would resolve straight back to the Moon
-        // for a player standing there, and the archive has no lunar data at all.
-        if (config != null && !WORLD_OVERWORLD.equals(activeWorldKey())) {
-            config.mapWorldMode = WORLD_MODE_EARTH;
-            tickWorldChange();
-            sendFeedback("Pinned to Terra Nostra - archives only cover Earth.", Formatting.YELLOW);
-        }
+        // No longer forced to Terra Nostra. The Moon has its own Wayback captures, so an archive loads
+        // for whichever world is on screen and the two are read from separate histories.
+        final String archiveWorld = activeWorldKey();
         archiveLoading = true;
         archiveStatus = "Loading archive…";
         lastArchiveError = "";
         java.util.concurrent.CompletableFuture.runAsync(() -> {
-            var snap = archiveClient.fetchSnapshot(yyyymmdd);
+            var snap = archiveClient.fetchSnapshot(yyyymmdd, archiveWorld);
             MinecraftClient client = MinecraftClient.getInstance();
             Runnable apply = () -> {
                 archiveLoading = false;
@@ -3072,6 +3070,7 @@ public class TownyMapMod implements ClientModInitializer {
                     lastArchiveErrorMs = System.currentTimeMillis();
                     return;
                 }
+                archiveWorldKey = archiveWorld;
                 apiClient.setArchiveTowns(snap.towns());
                 // Seed the detail cache with the snapshot's own popup info, so clicking an archived town
                 // shows that date's mayor/residents/founded — not today's (live fetches are gated off above).

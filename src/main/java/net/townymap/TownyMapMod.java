@@ -1024,9 +1024,10 @@ public class TownyMapMod implements ClientModInitializer {
             lastSearchMapInstance = mapInstance;
             armedMapDismiss = false;
             TownSearchOverlay.reset();
-            // Opening the map is the first moment Xaero is certain to have a session, and the surest
-            // point to catch a login-time switch that had nowhere to land.
-            requestXaeroDimensionSync();
+            // Deliberately does NOT request a dimension sync. Switching makes Xaero rebuild the map,
+            // which hands us a fresh GuiMap instance, which looked like the user reopening the map --
+            // so we asked for another switch, and it never settled. tickWorldMapOpenState covers the
+            // real open/close transitions on its own.
             return;
         }
         if (armedMapDismiss) {
@@ -2007,16 +2008,29 @@ public class TownyMapMod implements ClientModInitializer {
                 && client.gui.screen().getClass().getName().startsWith("xaero.map.gui.");
     }
 
+    private static volatile long worldMapClosedSinceMs = 0;
+
     private static void tickWorldMapOpenState() {
         boolean open = isWorldMapScreenActive();
-        if (open == worldMapWasOpen) return;
-        worldMapWasOpen = open;
         if (open) {
-            requestXaeroDimensionSync();
-        } else {
-            pendingXaeroSync = false;
-            releaseXaeroDimension();
+            worldMapClosedSinceMs = 0;
+            if (!worldMapWasOpen) {
+                worldMapWasOpen = true;
+                requestXaeroDimensionSync();
+            }
+            return;
         }
+        if (!worldMapWasOpen) return;
+        // Held for a moment before believing the map has closed. Switching the dimension makes Xaero
+        // tear down and rebuild the map screen, and during that rebuild there is briefly no map screen
+        // at all -- which read as a close, released the dimension, and set the whole thing swinging.
+        long now = System.currentTimeMillis();
+        if (worldMapClosedSinceMs == 0) { worldMapClosedSinceMs = now; return; }
+        if (now - worldMapClosedSinceMs < 1500L) return;
+        worldMapWasOpen = false;
+        worldMapClosedSinceMs = 0;
+        pendingXaeroSync = false;
+        releaseXaeroDimension();
     }
 
     /** Gives Xaero back control of its own dimension (null = follow the player). */
@@ -2088,7 +2102,13 @@ public class TownyMapMod implements ClientModInitializer {
                 }
             }
             var own = client.level.dimension();
-            mapWorld.setCustomDimensionId(target.equals(own) ? null : target);
+            var want = target.equals(own) ? null : target;
+            // Already there: do nothing at all. checkForWorldUpdate takes a file lock and pauses the map
+            // writer, so re-applying a dimension Xaero is already on kept restarting its "Preparing
+            // World Map" work, and it never got to finish.
+            var current = mapWorld.getCustomDimensionId();
+            if (java.util.Objects.equals(current, want)) return true;
+            mapWorld.setCustomDimensionId(want);
             proc.checkForWorldUpdate();
             LOGGER.info("[TownyMap] Xaero map dimension -> {} (known: {})", target.identifier(),
                     mapWorld.getDimensionsList().stream()

@@ -36,13 +36,34 @@ dependencies {
 def borderCountriesJson = 'tools/border-source/borders.nostra.countries.json'
 def borderStatesJson    = 'tools/border-source/borders.nostra.states-and-countries.json'
 
+// Minimum Xaero version we declare a dependency on, read from the jar in libs/ that we actually
+// compile against. Pinning a number by hand drifts: a user on a Xaero too old for our mixins got a
+// silently half-working mod rather than a clear "update Xaero" at launch, which cost three support
+// rounds. Falls back to "*" if the jar is absent so a fresh clone still builds.
+ext.xaeroFloor = { String prefix ->
+    def jar = fileTree('libs').matching { include "${prefix}-*.jar" }.files.sort { it.name }.find { true }
+    if (jar == null) return "*"
+    def zip = new java.util.zip.ZipFile(jar)
+    try {
+        def entry = zip.getEntry("fabric.mod.json")
+        if (entry == null) return "*"
+        return ">=" + new groovy.json.JsonSlurper().parse(zip.getInputStream(entry)).version
+    } finally {
+        zip.close()
+    }
+}
+
 processResources {
     dependsOn 'encodeBorders'
     inputs.property "version", project.version
+    inputs.property "xaeroworldmap_version", xaeroFloor("xaeroworldmap-fabric")
+    inputs.property "xaerominimap_version", xaeroFloor("xaerominimap-fabric")
     filteringCharset 'UTF-8'
     from(layout.buildDirectory.dir("generated/resources/borders"))
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": project.version,
+               "xaeroworldmap_version": xaeroFloor("xaeroworldmap-fabric"),
+               "xaerominimap_version": xaeroFloor("xaerominimap-fabric")
     }
 }
 

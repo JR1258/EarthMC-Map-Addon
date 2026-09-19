@@ -102,6 +102,7 @@ public abstract class MixinGuiMap {
         // Clear the search bar when the map is reopened (new GuiMap instance) or panned. Tracked on the
         // raw camera every frame, regardless of dimension. jumpTo() suppresses the next pan-clear so that
         // centre-on-select doesn't wipe the bar.
+        TownyMapMod.noteWorldMapInjectAlive();
         TownyMapMod.onWorldMapFrame(this, cameraX, cameraZ);
         // A world switch leaves the camera at coordinates belonging to the world we left. Re-aim before
         // anything is drawn, and suppress the pan-clear so it does not read as the user panning.
@@ -158,6 +159,7 @@ public abstract class MixinGuiMap {
     @Inject(require = 0, method = "renderPreDropdown", at = @At("HEAD"), remap = false)
     private void onRenderPreDropdown(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {
+        TownyMapMod.noteWorldMapInjectAlive();
         if (TownyMapMod.isAccessBlocked()) return;
         applyPendingRecentre();
         // Remember where the camera is left in this world so switching back returns to it rather than

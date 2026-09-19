@@ -1966,6 +1966,42 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile long lastXaeroSyncAttemptMs = 0;
     private static volatile boolean loggedXaeroNotReady = false;
 
+    private static volatile long lastWorldMapInjectMs = 0;
+    private static volatile boolean warnedInjectsDead = false;
+    private static volatile long mapOpenSinceMs = 0;
+
+    /** Called from each GuiMap inject, so we can tell whether they are actually running. */
+    public static void noteWorldMapInjectAlive() {
+        lastWorldMapInjectMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Says so when our hooks into Xaero's world map are not running.
+     *
+     * <p>Every inject carries require = 0 so an incompatible Xaero cannot crash the game -- but that
+     * also means it fails in complete silence, and the mod looks broken with no way to tell why. Three
+     * separate reports this month were some version of that. If the map screen is up and neither inject
+     * has fired for two seconds, the hooks did not take.
+     */
+    private static void tickWorldMapInjectHealth() {
+        if (warnedInjectsDead) return;
+        if (!isWorldMapScreenActive()) { mapOpenSinceMs = 0; return; }
+        long now = System.currentTimeMillis();
+        if (mapOpenSinceMs == 0) mapOpenSinceMs = now;
+        // Give the screen two seconds to draw a frame before judging it.
+        if (now - mapOpenSinceMs < 2000L) return;
+        if (lastWorldMapInjectMs != 0 && now - lastWorldMapInjectMs < 2000L) return;
+        warnedInjectsDead = true;
+        String ver = net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getModContainer("xaeroworldmap")
+                .map(m -> m.getMetadata().getVersion().getFriendlyString())
+                .orElse("not installed");
+        LOGGER.warn("[TownyMap] Our world map hooks are not running - Xaero's World Map {} is not "
+                + "compatible with this build. Update Xaero's World Map.", ver);
+        sendFeedback("Could not hook Xaero's World Map (" + ver + "). Update it, or report this.",
+                Formatting.RED);
+    }
+
     private static volatile boolean worldMapWasOpen = false;
 
     /**
@@ -2223,6 +2259,7 @@ public class TownyMapMod implements ClientModInitializer {
             autoResolvedWorld = resolvedPlayerWorld;
         }
         tickPlayerDimensionChange();
+        tickWorldMapInjectHealth();
         tickWorldMapOpenState();
         tickXaeroDimensionSync();
         String key = activeWorldKey();

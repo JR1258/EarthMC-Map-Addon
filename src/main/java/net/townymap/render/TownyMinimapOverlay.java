@@ -124,6 +124,10 @@ public final class TownyMinimapOverlay {
         lastRenderCanCoverWaypoints = false;
         lastRenderWaypointScale = 1.0;
         if (config == null || api == null || !config.minimapExtensionsEnabled) return;
+        // The same gate the world map has always used. Without it the minimap ignored "EarthMC Only"
+        // entirely: on any other server it kept drawing EarthMC claims over unrelated terrain while the
+        // world map correctly went quiet, which reads as the mod being stuck half-on.
+        if (!TownyMapMod.isActiveOnCurrentServer()) return;
         syncXaeroChunkGrid(session, config);
 
         api.tickMinimapTownMarkers();

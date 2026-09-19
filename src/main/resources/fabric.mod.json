@@ -24,8 +24,8 @@
     "fabricloader": ">=0.15.0",
     "fabric-api":   "*",
     "minecraft":    "1.21.11",
-    "xaerominimap":  "*",
-    "xaeroworldmap": "*"
+    "xaerominimap":  "${xaerominimap_version}",
+    "xaeroworldmap": "${xaeroworldmap_version}"
   },
   "suggests": {
     "modmenu": "*"

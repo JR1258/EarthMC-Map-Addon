@@ -2785,10 +2785,10 @@ public class TownyMapMod implements ClientModInitializer {
                 config != null ? config.favoriteTowns : List.of());
     }
 
-    public static TownSearchOverlay.ClickResult onTownSearchKeyPressed(int keyCode) {
+    public static TownSearchOverlay.ClickResult onTownSearchKeyPressed(net.minecraft.client.input.KeyEvent input) {
         if (!isActiveOnCurrentServer()) return TownSearchOverlay.ClickResult.none();
         if (apiClient == null) return TownSearchOverlay.ClickResult.none();
-        return TownSearchOverlay.keyPressed(keyCode, apiClient.getTowns(), apiClient.getPlayers(),
+        return TownSearchOverlay.keyPressed(input, apiClient.getTowns(), apiClient.getPlayers(),
                 townDetailsCache, apiPlayers, playerDetailsCache, apiClient.getPlayerHistory(),
                 activeNationList(), activeNationDetails());
     }

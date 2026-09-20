@@ -522,7 +522,7 @@ public abstract class MixinGuiMap {
                     return;
                 }
             }
-            TownSearchOverlay.ClickResult result = TownyMapMod.onTownSearchKeyPressed(input.key());
+            TownSearchOverlay.ClickResult result = TownyMapMod.onTownSearchKeyPressed(input);
             if (result.consumed()) {
                 jumpTo(result.target());
                 cir.setReturnValue(true);

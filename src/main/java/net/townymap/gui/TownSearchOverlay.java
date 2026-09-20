@@ -390,7 +390,8 @@ public final class TownSearchOverlay {
         selAnchor = -1;
     }
 
-    public static ClickResult keyPressed(int keyCode, List<TownData> towns, List<PlayerMarker> players,
+    public static ClickResult keyPressed(net.minecraft.client.input.KeyEvent input,
+                                         List<TownData> towns, List<PlayerMarker> players,
                                          Map<String, TownPopupData> townDetails,
                                          List<EarthMcPlayerData> apiPlayers,
                                          Map<String, EarthMcPlayerData> playerDetails,
@@ -398,6 +399,7 @@ public final class TownSearchOverlay {
                                          List<EarthMcNationData> apiNations,
                                          Map<String, EarthMcNationData> nationDetails) {
         if (!focused) return ClickResult.none();
+        int keyCode = input.key();
         List<Result> results = results(towns, players, townDetails, apiPlayers,
                 playerDetails, playerHistory, apiNations, nationDetails);
 
@@ -406,24 +408,27 @@ public final class TownSearchOverlay {
             selAnchor = -1;
             return ClickResult.consumedResult();
         }
-        // Ctrl+A selects the whole query.
-        if (keyCode == InputConstants.KEY_A && ctrlDown()) {
+        // Ctrl+A selects the whole query. 26.3 matches editing shortcuts against the layout-mapped
+        // keycode, not the physical scancode, so ask the event what the press means -- on AZERTY or
+        // QWERTZ the key labelled A is not the one in QWERTY's A position. These helpers also refuse
+        // the combo when Alt is held, so AltGr characters (Polish AltGr+A, and friends) still type.
+        if (input.isSelectAll()) {
             selAnchor = 0;
             caret = query.length();
             return ClickResult.consumedResult();
         }
         // Clipboard: Ctrl+C copy, Ctrl+X cut, Ctrl+V paste — on the selection if there is one, else the whole query.
-        if (keyCode == InputConstants.KEY_C && ctrlDown()) {
+        if (input.isCopy()) {
             setClipboard(hasSelection() ? query.substring(selLo(), selHi()) : query);
             return ClickResult.consumedResult();
         }
-        if (keyCode == InputConstants.KEY_X && ctrlDown()) {
+        if (input.isCut()) {
             setClipboard(hasSelection() ? query.substring(selLo(), selHi()) : query);
             if (hasSelection()) deleteSelection(); else { query = ""; caret = 0; selAnchor = -1; }
             afterEdit();
             return ClickResult.consumedResult();
         }
-        if (keyCode == InputConstants.KEY_V && ctrlDown()) {
+        if (input.isPaste()) {
             insertText(sanitizePaste(getClipboard()));
             afterEdit();
             return ClickResult.consumedResult();

@@ -608,6 +608,52 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     /** True when Xaero's world map is the active screen. */
+    private static final Object TEXT_INPUT_OWNER = new Object();
+    private static boolean textInputWanted = false;
+    private static boolean textInputWarned = false;
+
+    /**
+     * Tells the game whether one of our hand-drawn text fields has focus.
+     *
+     * <p>26.3 runs on SDL, where characters only arrive while text input has been started. GLFW sent
+     * them unconditionally, so these fields never had to ask and typing worked by accident; under SDL
+     * the same code receives nothing at all. Vanilla's EditBox goes through
+     * Minecraft.onTextInputFocusChange, which wants a GuiEventListener -- our fields are drawn by hand
+     * and are not widgets, so they talk to the manager directly.
+     *
+     * <p>Called from the fields' render paths every frame rather than on a transition: Gui.setScreen
+     * stops text input outright, so a screen rebuilt while the bar is focused (a dimension sync, a
+     * resize, one detail page opening another) would otherwise silently kill typing. Both manager
+     * calls are no-ops once the state already matches, so repeating them costs nothing.
+     */
+    public static void setTextInputActive(boolean active) {
+        textInputWanted = active;
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.textInputManager() == null) return;
+            if (active) client.textInputManager().startTextInput(TEXT_INPUT_OWNER);
+            else client.textInputManager().stopTextInput(TEXT_INPUT_OWNER);
+        } catch (Throwable t) {
+            if (!textInputWarned) {
+                textInputWarned = true;
+                LOGGER.warn("[TownyMap] Could not toggle text input -- typing in our search bars may not work", t);
+            }
+        }
+    }
+
+    /**
+     * Turns text input back off when the screen that owned a focused field has gone away.
+     * The fields only speak up while they render, so a map closed mid-typing would otherwise
+     * leave input started for good.
+     */
+    private static void tickTextInputFocus() {
+        if (!textInputWanted) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client != null && client.gui.screen() instanceof net.townymap.gui.DetailScreen) return;
+        if (isWorldMapScreenActive()) return;
+        setTextInputActive(false);
+    }
+
     public static boolean isWorldMapOpen() {
         Minecraft client = Minecraft.getInstance();
         return client != null && client.gui.screen() != null
@@ -2278,6 +2324,7 @@ public class TownyMapMod implements ClientModInitializer {
         tickWorldMapInjectHealth();
         tickWorldMapOpenState();
         tickXaeroDimensionSync();
+        tickTextInputFocus();
         String key = activeWorldKey();
         if (key.equals(lastActiveWorld)) return;
         lastActiveWorld = key;

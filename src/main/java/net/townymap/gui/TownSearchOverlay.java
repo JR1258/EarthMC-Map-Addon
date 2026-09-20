@@ -155,6 +155,7 @@ public final class TownSearchOverlay {
                               List<String> favoriteTowns) {
         Minecraft mc = Minecraft.getInstance();
         Font tr = mc.font;
+        TownyMapMod.setTextInputActive(focused);   // SDL only sends characters while text input is on
         tickTextDrag(mc, sw);   // follow a left-drag over the bar (updates the caret/selection)
 
         // Results are needed before layout: the bar widens to fit the longest row, so nothing is ellipsised.

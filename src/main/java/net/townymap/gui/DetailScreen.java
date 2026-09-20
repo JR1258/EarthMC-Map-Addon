@@ -348,6 +348,7 @@ public class DetailScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        net.townymap.TownyMapMod.setTextInputActive(searchFocused && hasSearch());
         // UI Scale: shrink the whole panel around the screen centre; the mouse is un-scaled to match.
         if (!UiScale.active()) { drawContent(ctx, mouseX, mouseY, delta); return; }
         float cx = this.width / 2f, cy = this.height / 2f;

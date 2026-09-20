@@ -358,9 +358,9 @@ public abstract class MixinGuiMap {
         try {
             int button = click.buttonInfo().button();
             // Swallow 26.2's phantom left-click that trails every right-click (else it dismisses the popup).
-            if (button == 1) {
+            if (button == InputConstants.MOUSE_BUTTON_RIGHT) {
                 lastRightClickNanos = System.nanoTime();
-            } else if (button == 0 && System.nanoTime() - lastRightClickNanos < SPURIOUS_LEFT_CLICK_NANOS) {
+            } else if (button == InputConstants.MOUSE_BUTTON_LEFT && System.nanoTime() - lastRightClickNanos < SPURIOUS_LEFT_CLICK_NANOS) {
                 lastRightClickNanos = 0L;   // consume exactly one phantom left-click per right-click
                 cir.setReturnValue(true);
                 return;
@@ -369,12 +369,12 @@ public abstract class MixinGuiMap {
             int sw = mc.getWindow().getGuiScaledWidth();
             int sh = mc.getWindow().getGuiScaledHeight();
 
-            if (button == 0 && net.townymap.gui.TownSearchOverlay.isExpandClick(click.x(), click.y())) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && net.townymap.gui.TownSearchOverlay.isExpandClick(click.x(), click.y())) {
                 TownyMapMod.openStatsPanel();
                 cir.setReturnValue(true);
                 return;
             }
-            if (button == 0) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 // The freshness line's [R] button, checked before the search bar so it wins the click.
                 if (TownyMapMod.clickMapDataStatus(click.x(), click.y())) {
                     cir.setReturnValue(true);
@@ -389,7 +389,7 @@ public abstract class MixinGuiMap {
                 }
             }
 
-            if (button == 0) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 TownInfoOverlay.ActionResult action = TownyMapMod.onTownInfoClick(click.x(), click.y());
                 if (action.action() != TownInfoOverlay.Action.NONE) {
                     cir.setReturnValue(true);
@@ -397,25 +397,25 @@ public abstract class MixinGuiMap {
                 }
             }
 
-            if (button == 0 && TownyMapMod.onSettingsButtonClick(click.x(), click.y(), sh)) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onSettingsButtonClick(click.x(), click.y(), sh)) {
                 TownyMapMod.openConfigScreen();
                 cir.setReturnValue(true);
                 return;
             }
 
-            if (button == 0 && TownyMapMod.onMapToggleClick(click.x(), click.y(), sh)) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onMapToggleClick(click.x(), click.y(), sh)) {
                 cir.setReturnValue(true);
                 return;
             }
 
             // Planning counter chips ("+" arms placement, T# removes that planned town).
-            if (button == 0 && TownyMapMod.onPlanningCounterClick(click.x(), click.y())) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onPlanningCounterClick(click.x(), click.y())) {
                 cir.setReturnValue(true);
                 return;
             }
 
             // With "+" armed, the next map click drops a planned town instead of selecting anything.
-            if (button == 0) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 double dimMul = TownyMapMod.worldMapOverlayScale();
                 double guiScale = (screenScale > 0) ? scale / screenScale : scale;
                 if (dimMul > 0.0 && guiScale > 0.0
@@ -427,20 +427,20 @@ public abstract class MixinGuiMap {
             }
 
             // Left-click a date-step arrow under the archive banner (±1 / ±10 days).
-            if (button == 0 && TownyMapMod.onArchiveNavClick(click.x(), click.y())) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onArchiveNavClick(click.x(), click.y())) {
                 cir.setReturnValue(true);
                 return;
             }
 
             // Left-click the archive banner exits archive mode.
-            if (button == 0 && TownyMapMod.onArchiveBannerClick(click.x(), click.y())) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onArchiveBannerClick(click.x(), click.y())) {
                 cir.setReturnValue(true);
                 return;
             }
 
             // Left-click a player dot/head → open the small player info panel (which has Expand). Uses the
             // overlay's own camera + scale so the hit-test matches exactly where the markers were drawn.
-            if (button == 0) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 double dimMul = TownyMapMod.worldMapOverlayScale();
                 double guiScale = (screenScale > 0) ? scale / screenScale : scale;
                 if (dimMul > 0.0 && guiScale > 0.0
@@ -453,23 +453,23 @@ public abstract class MixinGuiMap {
 
             // Left-click a nation capital star → open the small nation info panel (which has Expand). The
             // star screen positions are recorded as drawn, so this is a direct screen-space hit-test.
-            if (button == 0 && TownyMapMod.onMapNationStarClick(click.x(), click.y())) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT && TownyMapMod.onMapNationStarClick(click.x(), click.y())) {
                 cir.setReturnValue(true);
                 return;
             }
 
             // Right-click on our buttons: consume so it never falls through to the map (no
             // town/wilderness selection behind the button), and cycle mode toggles backward.
-            if (button == 1 && TownyMapMod.onSettingsButtonClick(click.x(), click.y(), sh)) {
+            if (button == InputConstants.MOUSE_BUTTON_RIGHT && TownyMapMod.onSettingsButtonClick(click.x(), click.y(), sh)) {
                 cir.setReturnValue(true);
                 return;
             }
-            if (button == 1 && TownyMapMod.onMapToggleClick(click.x(), click.y(), sh, true)) {
+            if (button == InputConstants.MOUSE_BUTTON_RIGHT && TownyMapMod.onMapToggleClick(click.x(), click.y(), sh, true)) {
                 cir.setReturnValue(true);
                 return;
             }
 
-            if (button == 1 && TownyMapMod.isChunkCounterActive()) {
+            if (button == InputConstants.MOUSE_BUTTON_RIGHT && TownyMapMod.isChunkCounterActive()) {
                 double[] world = overlayWorldFromScreen(click.x(), click.y(), sw, sh);
                 if (world != null) {
                     TownyMapMod.onChunkCounterClick(world[0], world[1]);
@@ -478,11 +478,11 @@ public abstract class MixinGuiMap {
                 return;
             }
 
-            if (button == 0) {
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 TownyMapMod.armMapClickDismiss(cameraX, cameraZ);   // dismiss the search/popup unless this
                 return;                                             // click turns into a pan-drag (keeps it)
             }
-            if (button != 1) return;
+            if (button != InputConstants.MOUSE_BUTTON_RIGHT) return;
 
             double[] world = overlayWorldFromScreen(click.x(), click.y(), sw, sh);
             if (world == null) return;

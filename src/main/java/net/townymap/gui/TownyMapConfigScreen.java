@@ -592,7 +592,7 @@ public class TownyMapConfigScreen extends Screen {
         int btn = click.button();
         // Right-click a cycling control to step it backward (mirrors the in-game map buttons).
         // Category rail
-        if (btn == 0 && searchQuery.isBlank()
+        if (btn == InputConstants.MOUSE_BUTTON_LEFT && searchQuery.isBlank()
                 && mx >= sidebarLeft && mx < sidebarLeft + SIDEBAR_W
                 && my >= bodyTop() && my < bodyBottom()) {
             int idx = (int) ((my - (bodyTop() + 4)) / 18);
@@ -603,7 +603,7 @@ public class TownyMapConfigScreen extends Screen {
                 return true;
             }
         }
-        if (btn == 1) {
+        if (btn == InputConstants.MOUSE_BUTTON_RIGHT) {
             for (Row r : rows) {
                 if (r.control instanceof CycleButton<?> cycling
                         && r.control.visible && r.control.isMouseOver(mx, my)) {
@@ -614,7 +614,7 @@ public class TownyMapConfigScreen extends Screen {
                     return true;
                 }
             }
-        } else if (btn == 0
+        } else if (btn == InputConstants.MOUSE_BUTTON_LEFT
                 && System.nanoTime() - lastRightCycleNs < 50_000_000L
                 && Math.abs(mx - lastRightCycleX) < 1.0
                 && Math.abs(my - lastRightCycleY) < 1.0) {

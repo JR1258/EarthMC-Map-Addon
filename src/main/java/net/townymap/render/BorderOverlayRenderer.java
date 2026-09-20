@@ -43,7 +43,7 @@ final class BorderOverlayRenderer {
                 t.setDaemon(true);
                 return t;
             });
-    private static final com.mojang.blaze3d.pipeline.RenderPipeline SNAPSHOT_PIPELINE =
+    private static final com.mojang.renderpearl.api.pipeline.RenderPipeline SNAPSHOT_PIPELINE =
             net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED;
 
     private final TownyMapConfig config;
@@ -480,10 +480,10 @@ final class BorderOverlayRenderer {
                                 com.mojang.blaze3d.platform.NativeImage image) {
             super(name, image);
             this.sampler = com.mojang.blaze3d.systems.RenderSystem.getSamplerCache().getSampler(
-                    com.mojang.blaze3d.textures.AddressMode.CLAMP_TO_EDGE,
-                    com.mojang.blaze3d.textures.AddressMode.CLAMP_TO_EDGE,
-                    com.mojang.blaze3d.textures.FilterMode.LINEAR,
-                    com.mojang.blaze3d.textures.FilterMode.LINEAR,
+                    com.mojang.renderpearl.api.textures.AddressMode.CLAMP_TO_EDGE,
+                    com.mojang.renderpearl.api.textures.AddressMode.CLAMP_TO_EDGE,
+                    com.mojang.renderpearl.api.textures.FilterMode.LINEAR,
+                    com.mojang.renderpearl.api.textures.FilterMode.LINEAR,
                     false);
         }
     }

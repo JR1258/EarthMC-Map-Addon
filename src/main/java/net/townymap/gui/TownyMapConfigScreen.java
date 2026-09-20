@@ -1,5 +1,6 @@
 package net.townymap.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -14,7 +15,6 @@ import net.minecraft.network.chat.Component;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 import net.townymap.mixin.CycleButtonAccessor;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -269,14 +269,14 @@ public class TownyMapConfigScreen extends Screen {
         option("Info Panel Key", statsKeyButton,
                 () -> "Not bound".equals(net.townymap.input.TownyMapKeybinds.openStatsKeyName()),
                 () -> {
-                    net.townymap.input.TownyMapKeybinds.setOpenStatsKey(GLFW.GLFW_KEY_UNKNOWN);
+                    net.townymap.input.TownyMapKeybinds.setOpenStatsKey(InputConstants.UNKNOWN.getValue());
                     statsKeyButton.setMessage(statsKeyLabel());
                 });
         action("Open Info Panel", TownyMapMod::openStatsPanel);
         option("Reload Claims Key", refreshKeyButton,
                 () -> "Not bound".equals(net.townymap.input.TownyMapKeybinds.refreshTownsKeyName()),
                 () -> {
-                    net.townymap.input.TownyMapKeybinds.setRefreshTownsKey(GLFW.GLFW_KEY_UNKNOWN);
+                    net.townymap.input.TownyMapKeybinds.setRefreshTownsKey(InputConstants.UNKNOWN.getValue());
                     refreshKeyButton.setMessage(refreshKeyLabel());
                 });
         option("World Map Overview", onOff(cfg.worldMapOverview, v -> cfg.worldMapOverview = v),
@@ -374,7 +374,7 @@ public class TownyMapConfigScreen extends Screen {
         option("Map Screenshot Key", screenshotKeyButton,
                 () -> "P".equalsIgnoreCase(net.townymap.input.TownyMapKeybinds.mapScreenshotKeyName()),
                 () -> {
-                    net.townymap.input.TownyMapKeybinds.setMapScreenshotKey(GLFW.GLFW_KEY_P);
+                    net.townymap.input.TownyMapKeybinds.setMapScreenshotKey(InputConstants.KEY_P);
                     screenshotKeyButton.setMessage(screenshotKeyLabel());
                 });
 
@@ -654,28 +654,28 @@ public class TownyMapConfigScreen extends Screen {
         // Rebinding: the next key becomes the screenshot bind (Escape clears it, as vanilla Controls does).
         if (awaitingStatsKey) {
             awaitingStatsKey = false;
-            int key = input.key() == GLFW.GLFW_KEY_ESCAPE ? GLFW.GLFW_KEY_UNKNOWN : input.key();
+            int key = input.key() == InputConstants.KEY_ESCAPE ? InputConstants.UNKNOWN.getValue() : input.key();
             net.townymap.input.TownyMapKeybinds.setOpenStatsKey(key);
             if (statsKeyButton != null) statsKeyButton.setMessage(statsKeyLabel());
             return true;
         }
         if (awaitingRefreshKey) {
             awaitingRefreshKey = false;
-            int key = input.key() == GLFW.GLFW_KEY_ESCAPE ? GLFW.GLFW_KEY_UNKNOWN : input.key();
+            int key = input.key() == InputConstants.KEY_ESCAPE ? InputConstants.UNKNOWN.getValue() : input.key();
             net.townymap.input.TownyMapKeybinds.setRefreshTownsKey(key);
             if (refreshKeyButton != null) refreshKeyButton.setMessage(refreshKeyLabel());
             return true;
         }
         if (awaitingScreenshotKey) {
             awaitingScreenshotKey = false;
-            int key = input.key() == GLFW.GLFW_KEY_ESCAPE ? GLFW.GLFW_KEY_UNKNOWN : input.key();
+            int key = input.key() == InputConstants.KEY_ESCAPE ? InputConstants.UNKNOWN.getValue() : input.key();
             net.townymap.input.TownyMapKeybinds.setMapScreenshotKey(key);
             if (screenshotKeyButton != null) screenshotKeyButton.setMessage(screenshotKeyLabel());
             return true;
         }
         // Enter in the archive-date field opens that day's archive and closes settings.
         if (archiveField != null && archiveField.isFocused()
-                && (input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER)) {
+                && (input.key() == InputConstants.KEY_RETURN || input.key() == InputConstants.KEY_NUMPADENTER)) {
             submitArchive();
             return true;
         }

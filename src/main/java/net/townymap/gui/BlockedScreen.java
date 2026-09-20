@@ -39,7 +39,7 @@ public final class BlockedScreen extends Screen {
     protected void init() {
         int y = this.height / 2 + 52;
         this.addRenderableWidget(Button.builder(Component.literal("Message the developer"),
-                        b -> Util.getPlatform().openUri(URI.create(DISCORD_URL)))
+                        b -> com.mojang.blaze3d.Blaze3D.openUri(URI.create(DISCORD_URL)))
                 .bounds(this.width / 2 - 108, y, 130, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal("Acknowledge"), b -> this.onClose())
                 .bounds(this.width / 2 + 28, y, 80, 20).build());

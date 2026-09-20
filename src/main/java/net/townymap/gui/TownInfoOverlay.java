@@ -463,7 +463,7 @@ public final class TownInfoOverlay {
     public static void openDiscord(String url) {
         if (url == null || url.isBlank()) return;
         try {
-            Util.getPlatform().openUri(URI.create(url));
+            com.mojang.blaze3d.Blaze3D.openUri(URI.create(url));
         } catch (Exception ignored) {
         }
     }

@@ -1,5 +1,6 @@
 package net.townymap.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -16,7 +17,6 @@ import net.townymap.model.PlayerMarker;
 import net.townymap.model.TownData;
 import net.townymap.model.TownPopupData;
 import net.townymap.util.DiscordUrl;
-import org.lwjgl.glfw.GLFW;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -345,8 +345,7 @@ public final class TownSearchOverlay {
      */
     private static void tickTextDrag(Minecraft mc, int sw) {
         if (!textDragging) return;
-        boolean held = focused && mc.getWindow() != null
-                && GLFW.glfwGetMouseButton(mc.getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        boolean held = focused && mc.mouseHandler != null && mc.mouseHandler.isLeftPressed();
         if (held) {
             caret = charIndexAtX(sw, mc.mouseHandler.xpos() * sw / (double) mc.getWindow().getWidth());
         } else {
@@ -401,34 +400,34 @@ public final class TownSearchOverlay {
         List<Result> results = results(towns, players, townDetails, apiPlayers,
                 playerDetails, playerHistory, apiNations, nationDetails);
 
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+        if (keyCode == InputConstants.KEY_ESCAPE) {
             focused = false;
             selAnchor = -1;
             return ClickResult.consumedResult();
         }
         // Ctrl+A selects the whole query.
-        if (keyCode == GLFW.GLFW_KEY_A && ctrlDown()) {
+        if (keyCode == InputConstants.KEY_A && ctrlDown()) {
             selAnchor = 0;
             caret = query.length();
             return ClickResult.consumedResult();
         }
         // Clipboard: Ctrl+C copy, Ctrl+X cut, Ctrl+V paste — on the selection if there is one, else the whole query.
-        if (keyCode == GLFW.GLFW_KEY_C && ctrlDown()) {
+        if (keyCode == InputConstants.KEY_C && ctrlDown()) {
             setClipboard(hasSelection() ? query.substring(selLo(), selHi()) : query);
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_X && ctrlDown()) {
+        if (keyCode == InputConstants.KEY_X && ctrlDown()) {
             setClipboard(hasSelection() ? query.substring(selLo(), selHi()) : query);
             if (hasSelection()) deleteSelection(); else { query = ""; caret = 0; selAnchor = -1; }
             afterEdit();
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_V && ctrlDown()) {
+        if (keyCode == InputConstants.KEY_V && ctrlDown()) {
             insertText(sanitizePaste(getClipboard()));
             afterEdit();
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+        if (keyCode == InputConstants.KEY_BACKSPACE) {
             if (hasSelection()) deleteSelection();
             else if (ctrlDown()) deleteWordBackward();
             else if (caret > 0) { query = query.substring(0, caret - 1) + query.substring(caret); caret--; }
@@ -436,29 +435,29 @@ public final class TownSearchOverlay {
             afterEdit();
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_DELETE) {
+        if (keyCode == InputConstants.KEY_DELETE) {
             if (hasSelection()) deleteSelection();
             else if (caret < query.length()) query = query.substring(0, caret) + query.substring(caret + 1);
             selAnchor = -1;
             afterEdit();
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
-            int to = keyCode == GLFW.GLFW_KEY_LEFT ? caret - 1 : caret + 1;
+        if (keyCode == InputConstants.KEY_LEFT || keyCode == InputConstants.KEY_RIGHT) {
+            int to = keyCode == InputConstants.KEY_LEFT ? caret - 1 : caret + 1;
             moveCaret(Math.max(0, Math.min(query.length(), to)), shiftDown());
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_HOME) { moveCaret(0, shiftDown()); return ClickResult.consumedResult(); }
-        if (keyCode == GLFW.GLFW_KEY_END)  { moveCaret(query.length(), shiftDown()); return ClickResult.consumedResult(); }
-        if (keyCode == GLFW.GLFW_KEY_DOWN) {
+        if (keyCode == InputConstants.KEY_HOME) { moveCaret(0, shiftDown()); return ClickResult.consumedResult(); }
+        if (keyCode == InputConstants.KEY_END)  { moveCaret(query.length(), shiftDown()); return ClickResult.consumedResult(); }
+        if (keyCode == InputConstants.KEY_DOWN) {
             if (!results.isEmpty()) selected = Math.min(results.size() - 1, selected + 1);
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_UP) {
+        if (keyCode == InputConstants.KEY_UP) {
             selected = Math.max(0, selected - 1);
             return ClickResult.consumedResult();
         }
-        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+        if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
             if (!results.isEmpty()) {
                 Result result = results.get(Math.min(selected, results.size() - 1));
                 focused = false;
@@ -501,11 +500,8 @@ public final class TownSearchOverlay {
     }
 
     private static boolean shiftDown() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.getWindow() == null) return false;
-        long h = mc.getWindow().handle();
-        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+        return InputConstants.isKeyDown(InputConstants.KEY_LSHIFT)
+                || InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     private static final int MAX_QUERY = 60;
@@ -531,15 +527,12 @@ public final class TownSearchOverlay {
         return b.toString();
     }
 
-    /** True while Ctrl (or Cmd on macOS) is held — via raw GLFW, matching how this mod reads Shift elsewhere. */
+    /** True while Ctrl (or Cmd on macOS) is held, matching how this mod reads Shift elsewhere. */
     private static boolean ctrlDown() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.getWindow() == null) return false;
-        long h = mc.getWindow().handle();
-        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SUPER) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SUPER) == GLFW.GLFW_PRESS;
+        return InputConstants.isKeyDown(InputConstants.KEY_LCONTROL)
+                || InputConstants.isKeyDown(InputConstants.KEY_RCONTROL)
+                || InputConstants.isKeyDown(InputConstants.KEY_LGUI)
+                || InputConstants.isKeyDown(InputConstants.KEY_RGUI);
     }
 
 

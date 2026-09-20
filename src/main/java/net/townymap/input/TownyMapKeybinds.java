@@ -6,7 +6,6 @@ import net.minecraft.client.KeyMapping;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.resources.Identifier;
 import net.townymap.TownyMapMod;
-import org.lwjgl.glfw.GLFW;
 
 public final class TownyMapKeybinds {
 
@@ -24,9 +23,9 @@ public final class TownyMapKeybinds {
         // Everything the removed binds covered has an on-map button. These two do not: the screenshot
         // needs a frame drawn without our chrome, and a claim refresh is worth having under a key when
         // the map is closed. Refresh ships unbound so it cannot collide with another mod's default.
-        mapScreenshot = register("map_screenshot", GLFW.GLFW_KEY_P);
-        refreshTowns = register("refresh_towns", GLFW.GLFW_KEY_R);
-        openStats = register("open_stats", GLFW.GLFW_KEY_J);
+        mapScreenshot = register("map_screenshot", InputConstants.KEY_P);
+        refreshTowns = register("refresh_towns", InputConstants.KEY_R);
+        openStats = register("open_stats", InputConstants.KEY_J);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Blocked access turns every bind into a no-op, but the presses are still consumed so they
@@ -75,7 +74,7 @@ public final class TownyMapKeybinds {
     private static KeyMapping register(String id, int defaultKey) {
         return KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.townymapaddon." + id,
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 defaultKey,
                 CATEGORY
         ));
@@ -95,9 +94,9 @@ public final class TownyMapKeybinds {
     /** Rebinds the stats key from our settings screen; same write-through as the others. */
     public static void setOpenStatsKey(int keyCode) {
         if (openStats == null) return;
-        openStats.setKey(keyCode == GLFW.GLFW_KEY_UNKNOWN
+        openStats.setKey(keyCode == InputConstants.UNKNOWN.getValue()
                 ? InputConstants.UNKNOWN
-                : InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+                : InputConstants.Type.KEYBOARD.getOrCreate(keyCode));
         KeyMapping.resetMapping();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc != null && mc.options != null) mc.options.save();
@@ -119,9 +118,9 @@ public final class TownyMapKeybinds {
     /** Rebinds the refresh key from our settings screen; same write-through as the screenshot bind. */
     public static void setRefreshTownsKey(int keyCode) {
         if (refreshTowns == null) return;
-        refreshTowns.setKey(keyCode == GLFW.GLFW_KEY_UNKNOWN
+        refreshTowns.setKey(keyCode == InputConstants.UNKNOWN.getValue()
                 ? InputConstants.UNKNOWN
-                : InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+                : InputConstants.Type.KEYBOARD.getOrCreate(keyCode));
         KeyMapping.resetMapping();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc != null && mc.options != null) mc.options.save();
@@ -143,9 +142,9 @@ public final class TownyMapKeybinds {
      */
     public static void setMapScreenshotKey(int keyCode) {
         if (mapScreenshot == null) return;
-        mapScreenshot.setKey(keyCode == GLFW.GLFW_KEY_UNKNOWN
+        mapScreenshot.setKey(keyCode == InputConstants.UNKNOWN.getValue()
                 ? InputConstants.UNKNOWN
-                : InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+                : InputConstants.Type.KEYBOARD.getOrCreate(keyCode));
         KeyMapping.resetMapping();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc != null && mc.options != null) mc.options.save();

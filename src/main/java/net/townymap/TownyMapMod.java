@@ -10,7 +10,6 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.network.chat.Component;
@@ -1034,9 +1033,8 @@ public class TownyMapMod implements ClientModInitializer {
             if (Math.abs(cameraX - armCamX) > 0.5 || Math.abs(cameraZ - armCamZ) > 0.5) {
                 armedMapDismiss = false;                  // camera moved → it was a pan-drag → keep the result
             } else {
-                long win = GLFW.glfwGetCurrentContext();
-                boolean released = win != 0L
-                        && GLFW.glfwGetMouseButton(win, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_RELEASE;
+                Minecraft mc = Minecraft.getInstance();
+                boolean released = mc != null && mc.mouseHandler != null && !mc.mouseHandler.isLeftPressed();
                 if (released || System.currentTimeMillis() - armTimeMs >= DISMISS_DELAY_MS) {
                     armedMapDismiss = false;
                     dismissOnMapClick();                  // released (or timed out) without panning → click-away

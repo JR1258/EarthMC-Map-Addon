@@ -1,11 +1,11 @@
 package net.townymap.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -375,11 +375,8 @@ public final class ChunkCounterOverlay {
     }
 
     private static boolean shiftDown() {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.getWindow() == null) return false;
-        long h = client.getWindow().handle();
-        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+        return InputConstants.isKeyDown(InputConstants.KEY_LSHIFT)
+                || InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     /** True while a rectangle is being swept, so the map can preview it. */
@@ -406,10 +403,9 @@ public final class ChunkCounterOverlay {
     public static void tickDrag(double worldX, double worldZ) {
         if (!ownsActiveWorld(TownyMapMod.getConfig())) return;
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.getWindow() == null) return;
-        long handle = client.getWindow().handle();
+        if (client == null || client.mouseHandler == null) return;
         if (shapeDragging) {   // sweeping a rectangle: track the far corner, commit on release
-            if (GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
+            if (client.mouseHandler.isRightPressed()) {
                 shapeCurrentX = floorToChunk(worldX);
                 shapeCurrentZ = floorToChunk(worldZ);
             } else {
@@ -422,7 +418,7 @@ public final class ChunkCounterOverlay {
             }
             return;
         }
-        if (GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS) {
+        if (client.mouseHandler.isRightPressed()) {
             long key = key(floorToChunk(worldX), floorToChunk(worldZ));
             if (key != lastRightDownKey) {
                 applyDragPath(activeSelection(TownyMapMod.getConfig()), lastRightDownKey, key);

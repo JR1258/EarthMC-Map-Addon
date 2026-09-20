@@ -1,5 +1,6 @@
 package net.townymap.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -299,19 +300,19 @@ public class DetailScreen extends Screen {
         // Enter opens the top result, so a search can be finished without reaching for the mouse.
         if (searchFocused && hasSearch()) {
             int k = input.key();
-            if (k == org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE) {
+            if (k == InputConstants.KEY_BACKSPACE) {
                 if (!searchQuery.isEmpty()) {
                     searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
                     recomputeSearch();
                 }
                 return true;
             }
-            if (k == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {   // unfocus first, do not close the panel
+            if (k == InputConstants.KEY_ESCAPE) {   // unfocus first, do not close the panel
                 searchFocused = false;
                 searchHits.clear();
                 return true;
             }
-            if ((k == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || k == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER)
+            if ((k == InputConstants.KEY_RETURN || k == InputConstants.KEY_NUMPADENTER)
                     && !searchHits.isEmpty()) {
                 Ref best = searchHits.get(0);
                 TownyMapMod.openDetail(best.kind(), best.name(), this);

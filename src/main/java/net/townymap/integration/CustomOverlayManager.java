@@ -93,7 +93,7 @@ public final class CustomOverlayManager {
         } catch (IOException e) {
             LOGGER.warn("[TownyMap] Could not create overlays folder", e);
         }
-        Util.getPlatform().openUri(folder().toUri());
+        com.mojang.blaze3d.Blaze3D.openUri(folder().toUri());
     }
 
     /** Re-reads every {@code *.json} in the folder on a background thread. */

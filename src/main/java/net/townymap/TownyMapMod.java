@@ -484,9 +484,19 @@ public class TownyMapMod implements ClientModInitializer {
         return true;
     }
 
+    /** How long the light refresh runs before one is promoted to a full rebuild. */
+    private static final long FULL_REFRESH_INTERVAL_MS = 600_000L;   // 10 minutes
+    /** Starts at load: the map is freshly built when you join, so the clock runs from there. */
+    private static volatile long lastFullRefreshMs = System.currentTimeMillis();
+
     public static void refreshTownClaimsFromSettings() {
         if (config == null || !isActiveOnCurrentServer()) return;
-        boolean full = config.refreshEntireMap;
+        // The light path covers claims, and the tile cache revalidates its own imagery on a 20 minute
+        // cycle, so nothing is normally left behind. The full rebuild is the recovery for a cache that
+        // went bad, which nothing else would ever notice -- so rather than leaving it to a setting
+        // nobody turns on, a refresh is promoted to one whenever it has been long enough.
+        boolean full = config.refreshEntireMap
+                || System.currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS;
         forceRefreshTownClaims(full);
         sendFeedback(full
                 ? "Refreshing the whole map from squaremap..."
@@ -514,6 +524,7 @@ public class TownyMapMod implements ClientModInitializer {
             apiClient.forceTownMarkerRefresh();
             return;
         }
+        lastFullRefreshMs = System.currentTimeMillis();
         invalidateTownRenderCaches();
         // Imagery too, not just the claims. Tiles are keyed by world so they never need clearing for
         // correctness any more, which left no way to recover if a tile ever cached badly -- and one did,

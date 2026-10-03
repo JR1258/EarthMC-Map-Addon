@@ -388,6 +388,9 @@ public class TownyMapConfigScreen extends Screen {
         }),
                 () -> cfg.customOverlaysEnabled == DEFAULTS.customOverlaysEnabled,
                 () -> cfg.customOverlaysEnabled = DEFAULTS.customOverlaysEnabled);
+        option("Overlay Labels", onOff(cfg.customOverlayLabels, v -> cfg.customOverlayLabels = v),
+                () -> cfg.customOverlayLabels == DEFAULTS.customOverlayLabels,
+                () -> cfg.customOverlayLabels = DEFAULTS.customOverlayLabels);
         action("Open Overlays Folder", () -> net.townymap.integration.CustomOverlayManager.openFolder());
         option("Shop Waypoints", onOff(cfg.shopWaypointsEnabled, v -> {
                     cfg.shopWaypointsEnabled = v;

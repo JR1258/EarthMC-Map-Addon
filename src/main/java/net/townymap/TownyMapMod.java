@@ -216,9 +216,14 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void refreshTownClaimsAfterCommand() {
         if (apiClient == null) return;
-        // The API already knows, so ask it rather than waiting for squaremap to republish. This is the
-        // one case that fires in wilderness too, because that is where claiming happens.
-        refreshTownFromApi(selfTownName());
+        // The API knows before squaremap republishes -- but not before the server has applied the
+        // command. An unclaim is seen as it is typed and a claim as its success message arrives, and in
+        // both cases querying straight away returns the town as it was a moment ago, which showed up as
+        // the map being exactly one claim behind. Asked twice, late enough for the change to have landed
+        // and again in case the first was still early.
+        String town = selfTownName();
+        refreshTownFromApiDelayed(town, 700);
+        refreshTownFromApiDelayed(town, 3000);
         apiClient.forceTownMarkerRefreshDelayed(150);
         apiClient.forceTownMarkerRefreshDelayed(750);
         apiClient.forceTownMarkerRefreshDelayed(2500);
@@ -290,12 +295,29 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     /** The town whose claim the player is standing in, or null in wilderness. */
-    private static String townPlayerIsStandingIn() {
+    /**
+     * The town to pull live for a manual refresh.
+     *
+     * <p>Normally the town whose claim you are standing in. That lookup goes through squaremap, though,
+     * so a chunk you claimed moments ago -- the one case where this is most worth doing -- still reads
+     * as wilderness and would resolve to nothing at all. So when the map says wilderness we fall back
+     * to your own town, which is the one that just changed. With no town and no claim underfoot there
+     * is nothing to ask about and no request is made.
+     */
+    private static String townToRefreshHere() {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || apiClient == null) return null;
         TownData town = net.townymap.gui.TownHoverOverlay.townAt(
                 client.player.getX(), client.player.getZ(), apiClient.getTowns(playerWorldResolved()));
-        return town == null ? null : town.name();
+        return town != null ? town.name() : selfTownName();
+    }
+
+    /** Asks the API for a town after a delay, for when the server has not applied the change yet. */
+    private static void refreshTownFromApiDelayed(String townName, long delayMs) {
+        if (townName == null || townName.isBlank()) return;
+        java.util.concurrent.CompletableFuture.runAsync(() -> refreshTownFromApi(townName),
+                java.util.concurrent.CompletableFuture.delayedExecutor(
+                        delayMs, java.util.concurrent.TimeUnit.MILLISECONDS));
     }
 
     private static boolean isTownClaimCommand(String normalized) {
@@ -576,7 +598,7 @@ public class TownyMapMod implements ClientModInitializer {
         // Standing in a claim, pull that town live -- the whole point is to beat squaremap's own
         // publish lag for the claims right where you are. In wilderness there is no town to ask about,
         // so nothing is requested.
-        if (!full) refreshTownFromApi(townPlayerIsStandingIn());
+        if (!full) refreshTownFromApi(townToRefreshHere());
         forceRefreshTownClaims(full);
         sendFeedback(full
                 ? "Refreshing the whole map from squaremap..."

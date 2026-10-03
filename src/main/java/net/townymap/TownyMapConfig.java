@@ -46,8 +46,9 @@ public class TownyMapConfig {
     /**
      * What the manual claim refresh rebuilds. Off (the default) re-reads the claim data and lets the
      * renderer redraw whatever actually changed -- which is all that is needed to pick up a claim or
-     * unclaim, and keeps the map imagery on screen. On also drops every cached outline and map tile,
-     * which is the heavier recovery for a tile that cached badly.
+     * unclaim, and keeps the map imagery on screen; every 10 minutes one refresh is promoted to the
+     * full rebuild anyway. On makes every refresh the full one: it drops every cached outline and map
+     * tile, which is the heavier recovery for a tile that cached badly.
      */
     public boolean refreshEntireMap = false;
     public boolean infoDisplayTownEnabled = true;

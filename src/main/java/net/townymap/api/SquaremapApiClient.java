@@ -84,6 +84,9 @@ public class SquaremapApiClient {
     private volatile Map<String, List<TownData>> townsByWorld = Map.of();
     /** Town key -> geometry the API gave us, standing in until the map publishes the same claims. */
     private volatile Map<String, TownData> townGeometryOverrides = Map.of();
+    private final Map<String, Long> townGeometryOverrideAt = new ConcurrentHashMap<>();
+    /** An override stands in for publish lag. Past this it is the suspect one, not the map. */
+    private static final long GEOMETRY_OVERRIDE_MAX_AGE_MS = 180_000L;
     private volatile List<PlayerMarker> players      = List.of();
     private volatile Map<String, PlayerHistoryEntry> playerHistory = Map.of();
     private volatile Map<String, String> townMayors  = Map.of();   // townKey → mayor, parsed from popups
@@ -168,6 +171,7 @@ public class SquaremapApiClient {
         Map<String, TownData> next = new HashMap<>(townGeometryOverrides);
         next.put(replacement.key(), replacement);
         townGeometryOverrides = Map.copyOf(next);
+        townGeometryOverrideAt.put(replacement.key(), System.currentTimeMillis());
         applyGeometryOverrides(world);
     }
 
@@ -195,6 +199,13 @@ public class SquaremapApiClient {
         Map<String, TownData> overrides = townGeometryOverrides;
         if (overrides.isEmpty()) return;
         List<String> done = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        // An override that has outlived any plausible publish lag is more likely to be a stale read
+        // from the API than the map being slow, and a wrong one would otherwise sit over good data
+        // forever. Past the cut-off the map wins.
+        for (Map.Entry<String, Long> e : townGeometryOverrideAt.entrySet()) {
+            if (now - e.getValue() > GEOMETRY_OVERRIDE_MAX_AGE_MS) done.add(e.getKey());
+        }
         for (TownData town : parsed) {
             TownData over = overrides.get(town.key());
             if (over == null) continue;
@@ -206,7 +217,7 @@ public class SquaremapApiClient {
         }
         if (done.isEmpty()) return;
         Map<String, TownData> next = new HashMap<>(overrides);
-        for (String k : done) next.remove(k);
+        for (String k : done) { next.remove(k); townGeometryOverrideAt.remove(k); }
         townGeometryOverrides = Map.copyOf(next);
     }
 

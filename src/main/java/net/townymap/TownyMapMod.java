@@ -180,6 +180,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (isTownClaimCommand(normalized)) {
             rememberPendingClaim();
         } else if (isTownUnclaimCommand(normalized)) {
+            // Resolved before the server acts, while the chunk still answers with our town.
             refreshTownClaimsAfterCommand();
         } else if (net.townymap.integration.ShopWaypoints.isShopFindCommand(normalized)) {
             net.townymap.integration.ShopWaypoints.armCapture();
@@ -216,11 +217,76 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void refreshTownClaimsAfterCommand() {
         if (apiClient == null) return;
+        // The API already knows, so ask it rather than waiting for squaremap to republish. This is the
+        // one case that fires in wilderness too, because that is where claiming happens.
+        refreshTownFromApi(selfTownName());
         apiClient.forceTownMarkerRefreshDelayed(150);
         apiClient.forceTownMarkerRefreshDelayed(750);
         apiClient.forceTownMarkerRefreshDelayed(2500);
         apiClient.forceTownMarkerRefreshDelayed(6500);
         apiClient.forceTownMarkerRefreshDelayed(12000);
+    }
+
+    /** API-sourced chunks outlive a squaremap cycle, so they stay put until the map really has them. */
+    private static final long API_CLAIM_TTL_MS = 90_000L;
+
+    /**
+     * Pulls one town's claims straight from the EarthMC API and draws them now.
+     *
+     * <p>squaremap regenerates markers.json on its own schedule, so a chunk claimed seconds ago is not
+     * on the map yet -- but {@code coordinates.townBlocks} already has it. Those chunks go into the same
+     * optimistic layer that a {@code /t claim} used to populate by guessing the one chunk the player was
+     * standing in; this knows the whole set, so {@code /t claim rect} or an outpost lands complete.
+     *
+     * <p>It can only add. A chunk the map already shows cannot be taken off it from here, so unclaiming
+     * still waits for squaremap to catch up -- what this does is drop our own optimistic chunks the API
+     * no longer lists, so an unclaim of something only we were drawing disappears at once.
+     */
+    private static void refreshTownFromApi(String townName) {
+        if (earthMcApi == null || townName == null || townName.isBlank()) return;
+        if (!isActiveOnCurrentServer()) return;
+        earthMcApi.fetchTownClaims(townName).thenAccept(claims -> {
+            if (claims == null) return;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null) return;
+            mc.execute(() -> applyApiTownClaims(claims));
+        });
+    }
+
+    /** Reconciles what we are drawing for one town against what the API says it owns. */
+    private static void applyApiTownClaims(net.townymap.api.EarthMcApiClient.TownClaims claims) {
+        if (config == null) return;
+        String world = playerWorldResolved();
+        // Anything we were optimistically drawing for this town that the API does not list is gone.
+        optimisticClaimChunks.removeIf(c -> claims.name().equalsIgnoreCase(c.townName())
+                && c.inWorld(world)
+                && !claims.chunks().contains(
+                        net.townymap.api.EarthMcApiClient.chunkKey(c.chunkX(), c.chunkZ())));
+        for (long key : claims.chunks()) {
+            addOptimisticClaimChunk((int) (key >> 32), (int) key, claims.name(), API_CLAIM_TTL_MS);
+        }
+    }
+
+    /** The player's own town, from whichever source already knows it. */
+    private static String selfTownName() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getUser() == null) return null;
+        String selfName = client.getUser().getName();
+        if (apiClient != null) {
+            String roster = apiClient.townOfResidentKey(townKey(selfName));
+            if (roster != null && !roster.isBlank()) return roster;
+        }
+        EarthMcPlayerData cached = playerDetailsCache.get(townKey(selfName));
+        return cached == null || cached.townName().isBlank() ? null : cached.townName();
+    }
+
+    /** The town whose claim the player is standing in, or null in wilderness. */
+    private static String townPlayerIsStandingIn() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || apiClient == null) return null;
+        TownData town = net.townymap.gui.TownHoverOverlay.townAt(
+                client.player.getX(), client.player.getZ(), apiClient.getTowns(playerWorldResolved()));
+        return town == null ? null : town.name();
     }
 
     private static boolean isTownClaimCommand(String normalized) {
@@ -352,6 +418,10 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static void addOptimisticClaimChunk(int chunkX, int chunkZ, String townName) {
+        addOptimisticClaimChunk(chunkX, chunkZ, townName, OPTIMISTIC_CLAIM_TTL_MS);
+    }
+
+    private static void addOptimisticClaimChunk(int chunkX, int chunkZ, String townName, long ttlMs) {
         if (config == null || apiClient == null || townName == null || townName.isBlank()) return;
         TownData town = townByName(townName);
         int fillColor;
@@ -371,7 +441,7 @@ public class TownyMapMod implements ClientModInitializer {
         long now = System.currentTimeMillis();
         optimisticClaimChunks.removeIf(chunk -> chunk.chunkX() == chunkX && chunk.chunkZ() == chunkZ);
         optimisticClaimChunks.add(new OptimisticClaimChunk(chunkX, chunkZ, townName, fillColor, outlineColor,
-                now + OPTIMISTIC_CLAIM_TTL_MS, playerWorldResolved()));
+                now + ttlMs, playerWorldResolved()));
     }
 
     private static TownData townByName(String townName) {
@@ -498,6 +568,10 @@ public class TownyMapMod implements ClientModInitializer {
         // nobody turns on, a refresh is promoted to one whenever it has been long enough.
         boolean full = config.refreshEntireMap
                 || System.currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS;
+        // Standing in a claim, pull that town live -- the whole point is to beat squaremap's own
+        // publish lag for the claims right where you are. In wilderness there is no town to ask about,
+        // so nothing is requested.
+        if (!full) refreshTownFromApi(townPlayerIsStandingIn());
         forceRefreshTownClaims(full);
         sendFeedback(full
                 ? "Refreshing the whole map from squaremap..."

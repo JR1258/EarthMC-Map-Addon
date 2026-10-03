@@ -243,7 +243,7 @@ public class TownyMapMod implements ClientModInitializer {
         EarthMcPlayerData cached = playerDetailsCache.get(townKey(selfName));
         if (cached == null && earthMcApi != null && isActiveOnCurrentServer()) {
             earthMcApi.fetchPlayer(selfName).thenAccept(d -> {
-                if (d != null) playerDetailsCache.put(townKey(selfName), d);
+                if (d != null) cachePlayerDetails(townKey(selfName), d);
             });
         }
         return cached;
@@ -287,8 +287,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (earthMcApi == null) return;
         earthMcApi.fetchPlayer(selfName).thenAccept(data -> {
             if (data == null || data.townName().isBlank()) return;
-            playerDetailsCache.put(townKey(selfName), data);
-            playerDetailsCache.put(townKey(data.name()), data);
+            cachePlayerDetails(townKey(selfName), data);
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
@@ -313,8 +312,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
         earthMcApi.fetchPlayer(selfName).thenAccept(data -> {
             if (data == null || data.townName().isBlank()) return;
-            playerDetailsCache.put(townKey(selfName), data);
-            playerDetailsCache.put(townKey(data.name()), data);
+            cachePlayerDetails(townKey(selfName), data);
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc != null) {
                 mc.execute(() -> addOptimisticClaimChunk(chunkX, chunkZ, data.townName()));
@@ -2427,7 +2425,26 @@ public class TownyMapMod implements ClientModInitializer {
         String selfName = client.getSession().getUsername();
         if (playerName.equalsIgnoreCase(selfName)) return 0;
 
-        EarthMcPlayerData self = playerDetailsCache.get(sessionSelfKey(selfName));
+        String selfKey = sessionSelfKey(selfName);
+
+        // The squaremap town rosters are rebuilt from markers.json every fetch cycle, so they are the
+        // live answer to "who is in which town". playerDetailsCache is not: it is filled the first time
+        // a player is seen and was never re-read, so someone who left your town kept their colour for
+        // the rest of the session. Ask the roster first and fall back to the cache only before the
+        // first markers fetch has landed.
+        if (apiClient != null && apiClient.hasResidentRoster()) {
+            String selfTown = apiClient.townOfResidentKey(selfKey);
+            if (selfTown != null && selfTown.equalsIgnoreCase(apiClient.townOfResidentKey(playerKey))) {
+                return 0xFF35F2FF;
+            }
+            String selfNation = apiClient.nationOfResidentKey(selfKey);
+            if (selfNation != null && selfNation.equalsIgnoreCase(apiClient.nationOfResidentKey(playerKey))) {
+                return 0xFFFFE066;
+            }
+            return 0xFFFFFFFF;
+        }
+
+        EarthMcPlayerData self = playerDetailsCache.get(selfKey);
         if (self == null) {
             requestMinimapPlayerDetails(selfName);
             return 0xFFFFFFFF;
@@ -4002,8 +4019,24 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     /** True if this player key still needs a detail fetch (not cached, in-flight, recently-failed, or deferred). */
+    /** How long a fetched player's town/nation is trusted before it may be looked up again. */
+    private static final long PLAYER_DETAIL_TTL_MS = 600_000L;   // 10 minutes
+    private static final Map<String, Long> playerDetailsAt = new ConcurrentHashMap<>();
+
+    /** Records a fetched player under both keys, with the time, so the entry can go stale later. */
+    private static void cachePlayerDetails(String key, EarthMcPlayerData data) {
+        long now = System.currentTimeMillis();
+        playerDetailsCache.put(key, data);
+        playerDetailsAt.put(key, now);
+        String nameKey = townKey(data.name());
+        playerDetailsCache.put(nameKey, data);
+        playerDetailsAt.put(nameKey, now);
+    }
+
     private static boolean playerDetailNeeded(String key, long now) {
-        if (playerDetailsCache.containsKey(key) || playerDetailsLoading.contains(key)) return false;
+        if (playerDetailsLoading.contains(key)) return false;
+        if (playerDetailsCache.containsKey(key)
+                && now - playerDetailsAt.getOrDefault(key, 0L) < PLAYER_DETAIL_TTL_MS) return false;
         Long failedAt = playerDetailsFailedAt.get(key);
         if (failedAt != null) {
             // A player the API has nothing for is almost always an opt-out, which never resolves. Retrying
@@ -4038,8 +4071,7 @@ public class TownyMapMod implements ClientModInitializer {
                     String key = keys.get(i);
                     EarthMcPlayerData data = result == null ? null : result.get(key);
                     if (data != null) {
-                        playerDetailsCache.put(key, data);
-                        playerDetailsCache.put(townKey(data.name()), data);
+                        cachePlayerDetails(key, data);
                         playerDetailsFailedAt.remove(key);
                         playerDetailsDeferredAt.remove(key);
                     } else {
@@ -4062,8 +4094,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (!playerDetailsLoading.add(key)) return false;
         earthMcApi.fetchPlayer(name).whenComplete((data, error) -> {
             if (data != null) {
-                playerDetailsCache.put(key, data);
-                playerDetailsCache.put(townKey(data.name()), data);
+                cachePlayerDetails(key, data);
                 playerDetailsFailedAt.remove(key);
                 playerDetailsDeferredAt.remove(key);
             } else {

@@ -47,6 +47,13 @@ public class TownyMapConfig {
     // ── Info display (text lines under the minimap, stacked with Xaero's coords) ──
     /** Data-freshness line under Xaero's world-map coordinate readout. */
     public boolean dataStatusEnabled = true;
+    /**
+     * What the manual claim refresh rebuilds. Off (the default) re-reads the claim data and lets the
+     * renderer redraw whatever actually changed -- which is all that is needed to pick up a claim or
+     * unclaim, and keeps the map imagery on screen. On also drops every cached outline and map tile,
+     * which is the heavier recovery for a tile that cached badly.
+     */
+    public boolean refreshEntireMap = false;
     public boolean infoDisplayTownEnabled = true;
     public boolean infoDisplayNearbyPlayersEnabled = true;
     public boolean infoDisplayNearestTownEnabled = true;

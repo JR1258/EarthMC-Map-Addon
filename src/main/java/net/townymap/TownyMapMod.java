@@ -261,8 +261,17 @@ public class TownyMapMod implements ClientModInitializer {
                 && c.inWorld(world)
                 && !claims.chunks().contains(
                         net.townymap.api.EarthMcApiClient.chunkKey(c.chunkX(), c.chunkZ())));
+        // Only the chunks the map is not already showing. The overlay draws each chunk as its own
+        // outlined box over a brightened fill -- deliberately conspicuous for the one chunk you just
+        // claimed, but painting a whole town that way draws a grid of boxes across claims that already
+        // look fine. Testing against this town's own polygon is one point-in-polygon per chunk, so it
+        // costs nothing next to the request we just made.
+        TownData onMap = townByName(claims.name());
         for (long key : claims.chunks()) {
-            addOptimisticClaimChunk((int) (key >> 32), (int) key, claims.name(), API_CLAIM_TTL_MS);
+            int chunkX = (int) (key >> 32), chunkZ = (int) key;
+            double centreX = chunkX * 16 + 8.0, centreZ = chunkZ * 16 + 8.0;
+            if (net.townymap.gui.TownHoverOverlay.townCovers(onMap, centreX, centreZ)) continue;
+            addOptimisticClaimChunk(chunkX, chunkZ, claims.name(), API_CLAIM_TTL_MS);
         }
     }
 

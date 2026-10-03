@@ -670,6 +670,53 @@ public class EarthMcApiClient {
         return new NationResidentStats(active, proj);
     }
 
+    /** A town's claimed chunks, as packed {@code (chunkX, chunkZ)} keys, straight from the API. */
+    public record TownClaims(String name, java.util.Set<Long> chunks) {}
+
+    /** Packs a chunk coordinate the same way the claim overlays key their chunks. */
+    public static long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+    }
+
+    /**
+     * The live claim shape of ONE town, from {@code coordinates.townBlocks}.
+     *
+     * <p>This is the one thing squaremap cannot give us quickly: it regenerates markers.json on its own
+     * schedule, so a chunk claimed seconds ago is not on the map yet but is already here. The list is
+     * exactly {@code stats.numTownBlocks} long and each entry is a {@code [chunkX, chunkZ]} pair.
+     *
+     * <p>Returns null when the town cannot be read, so callers can leave what is on screen alone.
+     */
+    public CompletableFuture<TownClaims> fetchTownClaims(String townName) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (townName == null || townName.isBlank()) return null;
+            try {
+                JsonObject body = new JsonObject();
+                JsonArray q = new JsonArray();
+                q.add(townName);
+                body.add("query", q);
+                String json = postGated(BASE + "/towns", body.toString());
+                if (json == null) return null;
+                JsonArray arr = JsonParser.parseString(json).getAsJsonArray();
+                if (arr.isEmpty()) return null;
+                JsonObject town = arr.get(0).getAsJsonObject();
+                JsonObject coords = town.getAsJsonObject("coordinates");
+                if (coords == null || !coords.has("townBlocks")) return null;
+                JsonArray blocks = coords.getAsJsonArray("townBlocks");
+                java.util.Set<Long> chunks = new java.util.HashSet<>(Math.max(16, blocks.size() * 2));
+                for (int i = 0; i < blocks.size(); i++) {
+                    JsonArray pair = blocks.get(i).getAsJsonArray();
+                    if (pair.size() < 2) continue;
+                    chunks.add(chunkKey(pair.get(0).getAsInt(), pair.get(1).getAsInt()));
+                }
+                String name = town.has("name") ? town.get("name").getAsString() : townName;
+                return new TownClaims(name, chunks);
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }, executor);
+    }
+
     /** On-demand active-resident count for ONE focused town: one /towns fetch + one resident-timestamp pass
      *  (shared/cached with the nation lookups). Gated to avoid the 429 storms that would hide the Inactive row.
      *  Returns -1 if it can't be determined (caller falls back to the raw resident count). */

@@ -125,6 +125,12 @@ public final class TownHoverOverlay {
         return ((long) cellX << 32) ^ (cellZ & 0xFFFFFFFFL);
     }
 
+    /** True if this one town's polygon covers the point -- no spatial index, no cursor cache. */
+    public static boolean townCovers(TownData town, double worldX, double worldZ) {
+        return town != null && town.intersectsWorld(worldX, worldX, worldZ, worldZ)
+                && contains(town, worldX, worldZ);
+    }
+
     private static boolean contains(TownData town, double worldX, double worldZ) {
         boolean inside = false;
         for (int[][] ring : town.polygonRings()) {

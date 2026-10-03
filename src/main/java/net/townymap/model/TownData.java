@@ -42,6 +42,12 @@ public record TownData(String name, int rgbColor, int fillRgbColor, List<int[][]
         return new TownData(name, newRgbColor, newFillRgbColor, polygonRings, minX, maxX, minZ, maxZ);
     }
 
+    /** The same town with a different outline -- used when the API has claims the map has not published
+     *  yet. Bounds are recomputed, and renderSignature covers the rings, so this re-bakes on its own. */
+    public TownData withRings(List<int[][]> newRings) {
+        return new TownData(name, rgbColor, fillRgbColor, newRings);
+    }
+
     public String key() {
         return name == null ? "" : name.toLowerCase(Locale.ROOT);
     }

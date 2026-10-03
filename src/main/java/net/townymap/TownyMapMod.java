@@ -226,9 +226,6 @@ public class TownyMapMod implements ClientModInitializer {
         apiClient.forceTownMarkerRefreshDelayed(12000);
     }
 
-    /** API-sourced chunks outlive a squaremap cycle, so they stay put until the map really has them. */
-    private static final long API_CLAIM_TTL_MS = 90_000L;
-
     /**
      * Pulls one town's claims straight from the EarthMC API and draws them now.
      *
@@ -252,27 +249,31 @@ public class TownyMapMod implements ClientModInitializer {
         });
     }
 
-    /** Reconciles what we are drawing for one town against what the API says it owns. */
+    /**
+     * Gives the town the outline the API reports, instead of drawing its claims on top of it.
+     *
+     * <p>The previous attempt fed these chunks to the optimistic-claim layer, which draws each one as
+     * its own outlined box over a brightened fill. That is right for the single chunk you just claimed
+     * -- it is meant to catch your eye for a moment -- but it is a different visual language from a
+     * town, which is one merged outline with no internal edges, so any chunk shown that way looked
+     * wrong next to the claims around it. Rebuilding the town's own rings from the API's chunk list
+     * means the new claims are simply part of the town, drawn in its colours like everything else, on
+     * both maps, and an unclaim disappears instead of lingering because the outline no longer includes
+     * it. The map takes the town back as soon as it publishes the same claims.
+     */
     private static void applyApiTownClaims(net.townymap.api.EarthMcApiClient.TownClaims claims) {
-        if (config == null) return;
+        if (config == null || apiClient == null) return;
         String world = playerWorldResolved();
-        // Anything we were optimistically drawing for this town that the API does not list is gone.
-        optimisticClaimChunks.removeIf(c -> claims.name().equalsIgnoreCase(c.townName())
-                && c.inWorld(world)
-                && !claims.chunks().contains(
-                        net.townymap.api.EarthMcApiClient.chunkKey(c.chunkX(), c.chunkZ())));
-        // Only the chunks the map is not already showing. The overlay draws each chunk as its own
-        // outlined box over a brightened fill -- deliberately conspicuous for the one chunk you just
-        // claimed, but painting a whole town that way draws a grid of boxes across claims that already
-        // look fine. Testing against this town's own polygon is one point-in-polygon per chunk, so it
-        // costs nothing next to the request we just made.
         TownData onMap = townByName(claims.name());
-        for (long key : claims.chunks()) {
-            int chunkX = (int) (key >> 32), chunkZ = (int) key;
-            double centreX = chunkX * 16 + 8.0, centreZ = chunkZ * 16 + 8.0;
-            if (net.townymap.gui.TownHoverOverlay.townCovers(onMap, centreX, centreZ)) continue;
-            addOptimisticClaimChunk(chunkX, chunkZ, claims.name(), API_CLAIM_TTL_MS);
-        }
+        if (onMap == null) return;   // a town the map has never shown: nothing to re-shape
+
+        java.util.List<int[][]> rings = net.townymap.util.ChunkRings.trace(claims.chunks());
+        if (rings.isEmpty()) return;
+        apiClient.overrideTownGeometry(world, onMap.withRings(rings));
+
+        // Anything the old overlay left for this town is now part of the outline.
+        optimisticClaimChunks.removeIf(c -> claims.name().equalsIgnoreCase(c.townName()));
+        invalidateTownRenderCaches();
     }
 
     /** The player's own town, from whichever source already knows it. */
@@ -426,10 +427,6 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static void addOptimisticClaimChunk(int chunkX, int chunkZ, String townName) {
-        addOptimisticClaimChunk(chunkX, chunkZ, townName, OPTIMISTIC_CLAIM_TTL_MS);
-    }
-
-    private static void addOptimisticClaimChunk(int chunkX, int chunkZ, String townName, long ttlMs) {
         if (config == null || apiClient == null || townName == null || townName.isBlank()) return;
         TownData town = townByName(townName);
         int fillColor;
@@ -449,7 +446,7 @@ public class TownyMapMod implements ClientModInitializer {
         long now = System.currentTimeMillis();
         optimisticClaimChunks.removeIf(chunk -> chunk.chunkX() == chunkX && chunk.chunkZ() == chunkZ);
         optimisticClaimChunks.add(new OptimisticClaimChunk(chunkX, chunkZ, townName, fillColor, outlineColor,
-                now + ttlMs, playerWorldResolved()));
+                now + OPTIMISTIC_CLAIM_TTL_MS, playerWorldResolved()));
     }
 
     private static TownData townByName(String townName) {

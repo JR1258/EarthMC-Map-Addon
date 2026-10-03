@@ -82,6 +82,8 @@ public class SquaremapApiClient {
      * 47, so the second world is nearly free.
      */
     private volatile Map<String, List<TownData>> townsByWorld = Map.of();
+    /** Town key -> geometry the API gave us, standing in until the map publishes the same claims. */
+    private volatile Map<String, TownData> townGeometryOverrides = Map.of();
     private volatile List<PlayerMarker> players      = List.of();
     private volatile Map<String, PlayerHistoryEntry> playerHistory = Map.of();
     private volatile Map<String, String> townMayors  = Map.of();   // townKey → mayor, parsed from popups
@@ -154,6 +156,76 @@ public class SquaremapApiClient {
     public List<TownData> getTowns(String world) {
         if (archiveTowns != null) return archiveTowns;
         return townsByWorld.getOrDefault(world, List.of());
+    }
+
+    /**
+     * Replaces one town's outline with the shape the API reports, leaving everything else about the
+     * town alone. The map is the source of truth for every town but this one, and reverts to being so
+     * for this one as soon as it publishes the same claims.
+     */
+    public void overrideTownGeometry(String world, TownData replacement) {
+        if (replacement == null) return;
+        Map<String, TownData> next = new HashMap<>(townGeometryOverrides);
+        next.put(replacement.key(), replacement);
+        townGeometryOverrides = Map.copyOf(next);
+        applyGeometryOverrides(world);
+    }
+
+    /** Drops an override, so the town goes back to whatever the map says. */
+    public void clearTownGeometryOverride(String world, String townKey) {
+        if (townKey == null || !townGeometryOverrides.containsKey(townKey)) return;
+        Map<String, TownData> next = new HashMap<>(townGeometryOverrides);
+        next.remove(townKey);
+        townGeometryOverrides = Map.copyOf(next);
+        applyGeometryOverrides(world);
+    }
+
+    public TownData townGeometryOverride(String townKey) {
+        return townKey == null ? null : townGeometryOverrides.get(townKey);
+    }
+
+    /**
+     * Retires any override the map has caught up with.
+     *
+     * <p>An override is only standing in for claims squaremap had not published. Once the freshly
+     * parsed town covers every chunk the API gave us, the two agree and the map can have the town back
+     * -- which also means an override cannot outlive the lag it was compensating for.
+     */
+    private void dropSatisfiedOverrides(String world, List<TownData> parsed) {
+        Map<String, TownData> overrides = townGeometryOverrides;
+        if (overrides.isEmpty()) return;
+        List<String> done = new ArrayList<>();
+        for (TownData town : parsed) {
+            TownData over = overrides.get(town.key());
+            if (over == null) continue;
+            if (town.minX() <= over.minX() && town.maxX() >= over.maxX()
+                    && town.minZ() <= over.minZ() && town.maxZ() >= over.maxZ()
+                    && town.approximateChunks() == over.approximateChunks()) {
+                done.add(town.key());
+            }
+        }
+        if (done.isEmpty()) return;
+        Map<String, TownData> next = new HashMap<>(overrides);
+        for (String k : done) next.remove(k);
+        townGeometryOverrides = Map.copyOf(next);
+    }
+
+    /** Swaps the overridden towns into the published list, so every reader sees one town list. */
+    private void applyGeometryOverrides(String world) {
+        Map<String, TownData> overrides = townGeometryOverrides;
+        List<TownData> current = townsByWorld.getOrDefault(world, List.of());
+        if (current.isEmpty()) return;
+        List<TownData> updated = new ArrayList<>(current.size());
+        boolean changed = false;
+        for (TownData town : current) {
+            TownData over = overrides.get(town.key());
+            if (over != null && over != town) { updated.add(over); changed = true; }
+            else updated.add(town);
+        }
+        if (!changed) return;
+        Map<String, List<TownData>> next = new HashMap<>(townsByWorld);
+        next.put(world, List.copyOf(updated));
+        townsByWorld = Map.copyOf(next);
     }
     public boolean isArchiveActive()            { return archiveTowns != null; }
     /** When claims last actually landed, or 0 if none have yet. Not the same as the last attempt. */
@@ -351,6 +423,8 @@ public class SquaremapApiClient {
             next.put(world, updated);
             townsByWorld = Map.copyOf(next);
             LOGGER.info("[TownyMap] Loaded {} town polygons for {}", updated.size(), world);
+            dropSatisfiedOverrides(world, updated);
+            applyGeometryOverrides(world);
         } else {
             LOGGER.debug("[TownyMap] Town polygons unchanged for {}", world);
         }

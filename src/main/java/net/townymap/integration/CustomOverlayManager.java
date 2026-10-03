@@ -391,7 +391,13 @@ public final class CustomOverlayManager {
         if (blockScale >= MARKER_MIN_SCALE && !d.markers().isEmpty()) {
             MinecraftClient mc = MinecraftClient.getInstance();
             TextRenderer tr = mc == null ? null : mc.textRenderer;
-            boolean labels = blockScale >= MARKER_LABEL_MIN_SCALE && tr != null;
+            net.townymap.TownyMapConfig config = net.townymap.TownyMapMod.getConfig();
+            boolean labels = blockScale >= MARKER_LABEL_MIN_SCALE && tr != null
+                    && (config == null || config.customOverlayLabels);
+            // Boxes of the labels already placed this frame. A dense overlay (the ice-highway map has
+            // several stations within a few blocks) otherwise stacks names on top of each other until
+            // none of them can be read, so a name that would land on one already drawn is dropped.
+            List<int[]> placed = labels ? new ArrayList<>() : List.of();
             for (Marker s : d.markers()) {
                 if (s.x() < worldLeft || s.x() > worldRight || s.z() < worldTop || s.z() > worldBottom) continue;
                 int sx = sw / 2 + (int) Math.round((s.x() - cameraX) * blockScale);
@@ -399,10 +405,23 @@ public final class CustomOverlayManager {
                 ctx.fill(sx - 2, sy - 2, sx + 2, sy + 2, MARKER_OUTLINE);
                 ctx.fill(sx - 1, sy - 1, sx + 1, sy + 1, MARKER_COLOR);
                 if (labels && !s.name().isBlank()) {
-                    ctx.drawText(tr, s.name(), sx + 4, sy - 4, 0xFFBFE9FF, true);
+                    int lx = sx + 4, ly = sy - 4;
+                    int[] box = {lx, ly, lx + tr.getWidth(s.name()), ly + 9};
+                    if (fits(box, placed)) {
+                        ctx.drawText(tr, s.name(), lx, ly, 0xFFBFE9FF, true);
+                        placed.add(box);
+                    }
                 }
             }
         }
+    }
+
+    /** True when this label box clears every one already drawn. */
+    private static boolean fits(int[] box, List<int[]> placed) {
+        for (int[] other : placed) {
+            if (box[0] < other[2] && other[0] < box[2] && box[1] < other[3] && other[1] < box[3]) return false;
+        }
+        return true;
     }
 
     private static void drawLine(DrawContext ctx, Line line, double cameraX, double cameraZ,

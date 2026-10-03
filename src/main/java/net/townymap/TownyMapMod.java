@@ -468,8 +468,10 @@ public class TownyMapMod implements ClientModInitializer {
         ctx.fill(x - 2, STATUS_LINE_Y - 1, x + total + 2, STATUS_LINE_Y + 9, 0x66000000);
         ctx.drawText(font, status.text(), x, STATUS_LINE_Y, status.argb(), false);
         ctx.drawText(font, STATUS_REFRESH, x + textW, STATUS_LINE_Y, 0xFF7FB8FF, false);
-        statusBtnX1 = x + textW;
-        statusBtnX2 = x + total;
+        // The whole line is the hit target, not just "[R]" -- it is a small piece of text to hit, and
+        // there is nothing else on the line to click. Matches the backdrop drawn above.
+        statusBtnX1 = x - 2;
+        statusBtnX2 = x + total + 2;
         statusBtnShown = true;
     }
 
@@ -484,12 +486,34 @@ public class TownyMapMod implements ClientModInitializer {
 
     public static void refreshTownClaimsFromSettings() {
         if (config == null || !isActiveOnCurrentServer()) return;
-        forceRefreshTownClaims();
-        sendFeedback("Refreshing towns and claims from squaremap...", Formatting.WHITE);
+        boolean full = config.refreshEntireMap;
+        forceRefreshTownClaims(full);
+        sendFeedback(full
+                ? "Refreshing the whole map from squaremap..."
+                : "Refreshing claims from squaremap...", Formatting.WHITE);
     }
 
     public static void forceRefreshTownClaims() {
+        forceRefreshTownClaims(true);
+    }
+
+    /**
+     * Re-reads the claim data, and with {@code full} also throws away everything already drawn.
+     *
+     * <p>squaremap publishes one markers file per world, so there is no such thing as fetching a single
+     * town -- the request is the same either way. What differs is what we discard locally. The renderer
+     * already keys each town on its geometry signature and rebuilds the baked outline tiles whenever the
+     * snapshot changes, so a plain re-read is enough to pick up a claim or unclaim: only the towns that
+     * actually moved get redrawn, and the map imagery never leaves the screen. The full path additionally
+     * drops every outline and map tile, which is the recovery for a tile that cached badly or a data
+     * source swapped underneath us -- correct, but it blanks and re-downloads the map to do it.
+     */
+    public static void forceRefreshTownClaims(boolean full) {
         if (apiClient == null) return;
+        if (!full) {
+            apiClient.forceTownMarkerRefresh();
+            return;
+        }
         invalidateTownRenderCaches();
         // Imagery too, not just the claims. Tiles are keyed by world so they never need clearing for
         // correctness any more, which left no way to recover if a tile ever cached badly -- and one did,
@@ -2523,6 +2547,23 @@ public class TownyMapMod implements ClientModInitializer {
     private static boolean archiveBannerVisible;
     private static volatile long lastArchiveErrorMs;
     private static final int ARCHIVE_BANNER_Y = 34;   // top offset, shared by the render and the click hit-test
+    private static final int ARCHIVE_BANNER_Y_BELOW_STATUS = 46;
+
+    /** True when the claim-freshness line is on screen -- same conditions renderMapDataStatus applies. */
+    private static boolean dataStatusLineVisible() {
+        return config != null && config.dataStatusEnabled
+                && isActiveOnCurrentServer() && !hideChromeForScreenshot();
+    }
+
+    /**
+     * Top of the archive banner. It sits under Xaero's coordinate readout, which is also where the
+     * claim-freshness line goes, so with that line on the banner has to start below it instead of
+     * covering it. Read from the config rather than from render state so the hit-test agrees with the
+     * draw in the same frame.
+     */
+    private static int archiveBannerY() {
+        return dataStatusLineVisible() ? ARCHIVE_BANNER_Y_BELOW_STATUS : ARCHIVE_BANNER_Y;
+    }
     // Date-step buttons drawn under the banner: jump the snapshot by ±1 / ±10 days (clamped to MIN_DATE..today).
     private static final int[] ARCHIVE_NAV_DELTAS = {-10, -1, 1, 10};
     private static final String[] ARCHIVE_NAV_LABELS = {"«10", "«1", "1»", "10»"};
@@ -2558,11 +2599,11 @@ public class TownyMapMod implements ClientModInitializer {
 
         int w = client.textRenderer.getWidth(text);
         int x = (screenW - w) / 2;
-        int y = ARCHIVE_BANNER_Y;   // below Xaero's top-centre coordinate readout so they don't overlap
+        int y = archiveBannerY();   // below Xaero's top-centre coordinate readout so they don't overlap
         archiveBannerX1 = x - 8; archiveBannerY1 = y - 4; archiveBannerX2 = x + w + 8; archiveBannerY2 = y + 11;
         archiveBannerVisible = isArchiveMode();
         boolean scaled = net.townymap.gui.UiScale.active();
-        if (scaled) net.townymap.gui.UiScale.push(ctx, screenW / 2f, ARCHIVE_BANNER_Y - 4);   // shrink around top-centre
+        if (scaled) net.townymap.gui.UiScale.push(ctx, screenW / 2f, archiveBannerY() - 4);   // shrink around top-centre
         ctx.fill(archiveBannerX1, archiveBannerY1, archiveBannerX2, archiveBannerY2, 0xE0141414);
         ctx.fill(archiveBannerX1, archiveBannerY1, archiveBannerX2, archiveBannerY1 + 1, accent);
         ctx.drawText(client.textRenderer, text, x, y, fg, false);
@@ -2605,7 +2646,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (net.townymap.gui.UiScale.active()) {
             MinecraftClient c = MinecraftClient.getInstance();
             if (c != null) mx = net.townymap.gui.UiScale.unscale(mx, c.getWindow().getScaledWidth() / 2.0);
-            my = net.townymap.gui.UiScale.unscale(my, ARCHIVE_BANNER_Y - 4);
+            my = net.townymap.gui.UiScale.unscale(my, archiveBannerY() - 4);
         }
         if (my < archiveNavY1 || my > archiveNavY2) return false;
         for (int i = 0; i < 4; i++) {
@@ -2650,9 +2691,9 @@ public class TownyMapMod implements ClientModInitializer {
         int x = (screenW - w) / 2;
         if (net.townymap.gui.UiScale.active()) {
             mx = net.townymap.gui.UiScale.unscale(mx, screenW / 2.0);
-            my = net.townymap.gui.UiScale.unscale(my, ARCHIVE_BANNER_Y - 4);
+            my = net.townymap.gui.UiScale.unscale(my, archiveBannerY() - 4);
         }
-        if (mx < x - 8 || mx > x + w + 8 || my < ARCHIVE_BANNER_Y - 4 || my > ARCHIVE_BANNER_Y + 11) {
+        if (mx < x - 8 || mx > x + w + 8 || my < archiveBannerY() - 4 || my > archiveBannerY() + 11) {
             return false;
         }
         exitArchive();

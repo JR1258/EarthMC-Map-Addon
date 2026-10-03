@@ -257,6 +257,10 @@ public class TownyMapConfigScreen extends Screen {
         option("Data Freshness Line", onOff(cfg.dataStatusEnabled, v -> cfg.dataStatusEnabled = v),
                 () -> cfg.dataStatusEnabled == DEFAULTS.dataStatusEnabled,
                 () -> cfg.dataStatusEnabled = DEFAULTS.dataStatusEnabled);
+        option("Refresh Rebuilds Everything",
+                onOff(cfg.refreshEntireMap, v -> cfg.refreshEntireMap = v),
+                () -> cfg.refreshEntireMap == DEFAULTS.refreshEntireMap,
+                () -> cfg.refreshEntireMap = DEFAULTS.refreshEntireMap);
         action("Reload Claims", TownyMapMod::refreshTownClaimsFromSettings);
         refreshKeyButton = Button.builder(refreshKeyLabel(), b -> {
             awaitingRefreshKey = true;

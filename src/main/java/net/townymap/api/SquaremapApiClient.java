@@ -94,6 +94,7 @@ public class SquaremapApiClient {
      * those players, and it costs nothing -- we already download and parse these popups.
      */
     private volatile Map<String, String> residentTowns = Map.of();
+    private volatile Map<String, String> residentNations = Map.of();
     private volatile Map<String, String> townNations = Map.of();   // townKey → nation, parsed from tooltips
 
     private final AtomicBoolean markerFetchRunning = new AtomicBoolean(false);
@@ -384,6 +385,14 @@ public class SquaremapApiClient {
         townNations = Map.copyOf(nations);
         townResidents = Map.copyOf(residents);
         residentTowns = Map.copyOf(residentTown);
+        // Resident -> nation, resolved once here rather than per player per frame. The town value is a
+        // display name and townNations is keyed lower-case, so this is where the one lower-casing goes.
+        Map<String, String> residentNation = new HashMap<>(residentTown.size());
+        for (Map.Entry<String, String> e : residentTown.entrySet()) {
+            String nation = nations.get(e.getValue().toLowerCase(Locale.ROOT));
+            if (nation != null && !nation.isBlank()) residentNation.put(e.getKey(), nation);
+        }
+        residentNations = Map.copyOf(residentNation);
     }
 
     private static List<TownData> reuseUnchangedTowns(List<TownData> current, List<TownData> parsed) {
@@ -741,6 +750,25 @@ public class SquaremapApiClient {
         if (playerName == null || playerName.isBlank()) return null;
         return residentTowns.get(playerName.toLowerCase(Locale.ROOT));
     }
+
+    /**
+     * Town of a resident, by their already-lower-cased name -- for the per-frame render loop, which
+     * has the key to hand and must not allocate a string per player per frame.
+     */
+    public String townOfResidentKey(String playerKey) {
+        return playerKey == null ? null : residentTowns.get(playerKey);
+    }
+
+    /** Nation of a resident, by their already-lower-cased name. */
+    public String nationOfResidentKey(String playerKey) {
+        return playerKey == null ? null : residentNations.get(playerKey);
+    }
+
+    /**
+     * True once a town roster has been parsed. Until then a null from the lookups above means "not
+     * loaded yet"; afterwards it means the player really is in no town.
+     */
+    public boolean hasResidentRoster() { return !residentTowns.isEmpty(); }
 
     /**
      * Resident names from a town popup. They follow the "Residents: <b>N</b></summary>" line as a plain

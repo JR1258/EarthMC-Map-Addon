@@ -106,6 +106,8 @@ public class TownyMapConfig {
     public boolean smoothTownOutlines = true;
     public boolean chunkGridEnabled = false;
     public boolean customOverlaysEnabled = false;
+    /** Draw the name next to each custom-overlay marker. Off leaves just the dots. */
+    public boolean customOverlayLabels = true;
     /** Drop temporary Xaero waypoints on the shops returned by QuickShop's {@code /qs find}. */
     public boolean shopWaypointsEnabled = true;
     /** How far from a shop waypoint you can get before it's removed again, in blocks. */

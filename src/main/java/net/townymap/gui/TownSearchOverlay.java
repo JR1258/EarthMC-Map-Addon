@@ -500,6 +500,9 @@ public final class TownSearchOverlay {
         caret = i;
     }
 
+    /** Shift state, for other overlays -- each branch reads the keyboard its own way, so share this. */
+    public static boolean shiftHeld() { return shiftDown(); }
+
     private static boolean shiftDown() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) return false;

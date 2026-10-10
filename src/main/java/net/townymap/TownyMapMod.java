@@ -1360,6 +1360,18 @@ public class TownyMapMod implements ClientModInitializer {
                 && net.townymap.gui.PlanningOverlay.handleClick(screenX, screenY);
     }
 
+    /** Right-clicking a planned pin removes it, so a plan can be tidied on the map itself. */
+    public static boolean onPlanningRemoveAt(double worldX, double worldZ, double blocksPerPixel) {
+        if (!isActiveOnCurrentServer() || config == null || blocksPerPixel <= 0) return false;
+        return net.townymap.gui.PlanningOverlay.removeNear(worldX, worldZ, 10.0 * blocksPerPixel);
+    }
+
+    /** Escape cancels an armed "+" instead of closing the map out from under you. */
+    public static boolean onPlanningEscape() {
+        return isActiveOnCurrentServer() && config != null
+                && net.townymap.gui.PlanningOverlay.disarm();
+    }
+
     /** With "+" armed, a left-click on the map drops a planned town there instead of selecting. */
     public static boolean onPlanningMapClick(double screenX, double screenY,
                                              double camXWorld, double camZWorld, double mapScale,

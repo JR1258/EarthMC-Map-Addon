@@ -38,13 +38,9 @@ public final class PlanningOverlay {
     private static final int COL_GAP = 4;
     private static final int PLANNED_RANGE = 1500;   // same 1.5k a real town contributes
 
-    private static final int BG        = 0xC0101114;
-    private static final int BORDER    = 0xFF2E3238;
-    private static final int CHIP_BG   = 0xB0181B20;
     private static final int CHIP_ON   = 0xFF6FD3A0;
     private static final int CHIP_TEXT = 0xFFE5E7EB;
     private static final int CHIP_BAD    = 0xFFE2564E;   // out of range: must be moved
-    private static final int CHIP_BAD_BG = 0x66401A18;
 
     /** The nation being planned for; blank until one is chosen. */
     private static String nation = "";
@@ -215,7 +211,28 @@ public final class PlanningOverlay {
         if (i < 0 || i >= planned.size()) return;
         planned.remove(i);
         if (i < ids.size()) ids.remove(i);
+        // valid/shortfall are rebuilt by resolve(), which only runs while the nation's range is actually
+        // being drawn -- so without dropping the removed town's entry here the header kept counting it,
+        // and "2 unreachable" stayed at 2 after one of them was deleted.
+        valid = dropAt(valid, i);
+        shortfall = dropAt(shortfall, i);
         version++;
+    }
+
+    private static boolean[] dropAt(boolean[] src, int i) {
+        if (i < 0 || i >= src.length) return src;
+        boolean[] out = new boolean[src.length - 1];
+        System.arraycopy(src, 0, out, 0, i);
+        System.arraycopy(src, i + 1, out, i, src.length - i - 1);
+        return out;
+    }
+
+    private static int[] dropAt(int[] src, int i) {
+        if (i < 0 || i >= src.length) return src;
+        int[] out = new int[src.length - 1];
+        System.arraycopy(src, 0, out, 0, i);
+        System.arraycopy(src, i + 1, out, i, src.length - i - 1);
+        return out;
     }
 
     /** Escape while the "+" is armed cancels it rather than closing the map. */
@@ -245,15 +262,8 @@ public final class PlanningOverlay {
         boolean scaled = UiScale.active();
         if (scaled) UiScale.push(ctx, LEFT, TOP);
 
-        if (!hasNation()) {
-            String msg = "Planning · choose a nation";
-            int w = tr.width(msg) + 10;
-            ctx.fill(LEFT - 1, TOP - 1, LEFT + w + 1, TOP + CHIP_H + 1, BORDER);
-            ctx.fill(LEFT, TOP, LEFT + w, TOP + CHIP_H, BG);
-            ctx.text(tr, msg, LEFT + 5, TOP + 3, CHIP_TEXT, false);
-            if (scaled) UiScale.pop(ctx);
-            return;
-        }
+            String msg = "Planning \u00b7 choose a nation";
+            DarkButtons.button(ctx, LEFT, TOP, tr.width(msg) + 12, CHIP_H, msg, false, CHIP_TEXT, -1, -1);
 
         int count = planned.size() + 1 + (planned.isEmpty() ? 0 : 1);   // + the "+" chip, + "x" to clear
         // Sized to the widest label actually on screen. Ids no longer track the count -- remove T1 from
@@ -289,10 +299,8 @@ public final class PlanningOverlay {
             head += " \u00b7 " + bad + " unreachable";
             if (miss > 0) head += " (" + label(firstBad) + " by " + miss + "m)";
         }
-        int headW = Math.max(chipW, tr.width(head) + 10);
-        ctx.fill(LEFT - 1, TOP - 1, LEFT + headW + 1, TOP + CHIP_H + 1, BORDER);
-        ctx.fill(LEFT, TOP, LEFT + headW, TOP + CHIP_H, BG);
-        ctx.text(tr, head, LEFT + 5, TOP + 3, bad > 0 ? CHIP_BAD : CHIP_TEXT, false);
+        int headW = Math.max(chipW, tr.width(head) + 12);
+        DarkButtons.button(ctx, LEFT, TOP, headW, CHIP_H, head, false, bad > 0 ? CHIP_BAD : CHIP_TEXT, -1, -1);
 
         int hoverIdx = -1;
         int usedRows = 0;
@@ -308,13 +316,18 @@ public final class PlanningOverlay {
             boolean badChip = !isPlus && !isClear && !isValid(i);
             if (hov && !isPlus && !isClear) hoverIdx = i;
 
-            int frame = lit ? CHIP_ON : badChip ? CHIP_BAD : BORDER;
-            ctx.fill(cx - 1, cy - 1, cx + chipW + 1, cy + CHIP_H + 1, frame);
-            ctx.fill(cx, cy, cx + chipW, cy + CHIP_H, badChip ? CHIP_BAD_BG : CHIP_BG);
             String label = isPlus ? "+" : isClear ? "\u00d7" : label(i);
-            int tw = tr.width(label);
-            ctx.text(tr, label, cx + (chipW - tw) / 2, cy + 3,
-                    lit ? CHIP_ON : badChip ? CHIP_BAD : hov ? 0xFFFFFFFF : CHIP_TEXT, false);
+            int fg = lit ? CHIP_ON : badChip ? CHIP_BAD : CHIP_TEXT;
+            DarkButtons.button(ctx, cx, cy, chipW, CHIP_H, label, true, fg, mx, my);
+            // An armed "+" and an unreachable town still need to stand out, which a plain button cannot
+            // say on its own -- so they keep a coloured frame drawn over the button's own edge.
+            if (lit || badChip) {
+                int frame = lit ? CHIP_ON : CHIP_BAD;
+                ctx.fill(cx - 1, cy - 1, cx + chipW + 1, cy, frame);
+                ctx.fill(cx - 1, cy + CHIP_H, cx + chipW + 1, cy + CHIP_H + 1, frame);
+                ctx.fill(cx - 1, cy, cx, cy + CHIP_H, frame);
+                ctx.fill(cx + chipW, cy, cx + chipW + 1, cy + CHIP_H, frame);
+            }
             hits.add(new Hit(cx, cy, chipW, CHIP_H, isPlus ? -1 : isClear ? -2 : i));
         }
         hovered = hoverIdx;
@@ -322,11 +335,9 @@ public final class PlanningOverlay {
         if (armed) {   // tell the user what the armed "+" is waiting for
             int hy = gridTop + usedRows * (CHIP_H + CHIP_GAP) + 2;
             String hint = "Click the map to place  ·  shift to keep placing";
-            int hw = tr.width(hint) + 10;
+            int hw = tr.width(hint) + 12;
             if (hy + CHIP_H < bottomLimit) {
-                ctx.fill(LEFT - 1, hy - 1, LEFT + hw + 1, hy + CHIP_H + 1, BORDER);
-                ctx.fill(LEFT, hy, LEFT + hw, hy + CHIP_H, BG);
-                ctx.text(tr, hint, LEFT + 5, hy + 3, CHIP_ON, false);
+                DarkButtons.button(ctx, LEFT, hy, hw, CHIP_H, hint, false, CHIP_ON, -1, -1);
             }
         }
 

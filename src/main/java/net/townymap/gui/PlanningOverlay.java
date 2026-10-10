@@ -16,8 +16,13 @@ import java.util.List;
  * client-side only and feed extra 1.5k circles into the same union the live range overlay draws.
  *
  * <p>The counter in the top-left mirrors the chunk counter's chip styling: one chip per planned town (T1, T2,
- * …) plus a {@code +} chip that arms the next map click. Chips wrap into further columns before they can run
- * past the middle of the screen, so a long plan never covers the map.
+ * …), a {@code +} chip that arms the next map click, and a {@code x} chip that clears the plan. Chips wrap
+ * into further columns before they can run past the middle of the screen, so a long plan never covers the map.
+ *
+ * <p>Placing: {@code +} then click the map, holding shift to keep placing a chain without re-arming between
+ * each one. Escape cancels an armed {@code +}. A planned town can be dropped either from its chip or by
+ * right-clicking its pin on the map. Labels are tied to the town rather than its position in the list, so
+ * removing one does not renumber the others out from under you.
  */
 public final class PlanningOverlay {
 
@@ -45,6 +50,11 @@ public final class PlanningOverlay {
     private static String nation = "";
     /** Planned town centres in world blocks: {x, z}. */
     private static final List<int[]> planned = new ArrayList<>();
+    /** Label number per planned town, kept across removals so T3 stays T3 when T2 goes. */
+    private static final List<Integer> ids = new ArrayList<>();
+    private static int nextId = 1;
+    /** How far outside the reachable area each town sits, in blocks; 0 when it is reachable. */
+    private static volatile int[] shortfall = new int[0];
     /** True once "+" is clicked: the next left-click on the map drops a town instead of selecting. */
     private static boolean armed;
     /** Chip hitboxes recorded as drawn, so clicks match exactly under UI Scale. */
@@ -58,6 +68,17 @@ public final class PlanningOverlay {
 
     public static int version() { return version; }
     public static int hoveredIndex() { return hovered; }
+
+    /** The stable label for a planned town, so the chip and its map pin always agree. */
+    public static String label(int i) {
+        return "T" + (i >= 0 && i < ids.size() ? ids.get(i) : i + 1);
+    }
+
+    /** Blocks this town is short of the reachable area, or 0 when it is in range. */
+    public static int shortfall(int i) {
+        int[] s = shortfall;
+        return i >= 0 && i < s.length ? s[i] : 0;
+    }
 
     public static boolean isValid(int i) {
         boolean[] v = valid;
@@ -92,6 +113,20 @@ public final class PlanningOverlay {
             }
         }
         valid = ok;
+        // How far each rejected town would have to move to qualify -- "out of range" on its own leaves
+        // you dragging it around blind, whereas a distance tells you whether it is nearly there.
+        int[] miss = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (ok[i]) continue;
+            int[] p = planned.get(i);
+            double best = Double.MAX_VALUE;
+            for (int[] c : reach) {
+                double dx = p[0] - c[0], dz = p[1] - c[1];
+                best = Math.min(best, Math.sqrt(dx * dx + dz * dz) - c[2]);
+            }
+            miss[i] = best == Double.MAX_VALUE ? 0 : (int) Math.ceil(Math.max(0, best));
+        }
+        shortfall = miss;
         List<int[]> out = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             if (ok[i]) out.add(new int[]{planned.get(i)[0], planned.get(i)[1], PLANNED_RANGE});
@@ -121,7 +156,7 @@ public final class PlanningOverlay {
     /** Sets the nation to plan for and shows its range. Called by the search bar and the info-panel button. */
     public static void setNation(String name) {
         if (name == null || name.isBlank()) return;
-        if (!name.equalsIgnoreCase(nation)) { planned.clear(); version++; }   // new nation, new plan
+        if (!name.equalsIgnoreCase(nation)) { planned.clear(); ids.clear(); version++; }   // new nation, new plan
         nation = name;
         TownSearchOverlay.showNationRange(name);
     }
@@ -130,6 +165,8 @@ public final class PlanningOverlay {
     public static void reset() {
         nation = "";
         planned.clear();
+        ids.clear();
+        shortfall = new int[0];
         armed = false;
         hits.clear();
         valid = new boolean[0];
@@ -151,9 +188,52 @@ public final class PlanningOverlay {
     public static boolean placeAt(double worldX, double worldZ) {
         if (!armed || !hasNation()) return false;
         planned.add(new int[]{(int) Math.round(worldX), (int) Math.round(worldZ)});
-        armed = false;
+        ids.add(nextId++);
+        // Holding shift keeps the "+" armed, so a chain of towns can be walked out in one go instead of
+        // re-arming between every click.
+        armed = TownSearchOverlay.shiftHeld();
         version++;
         return true;
+    }
+
+    /** Right-clicking a planned pin on the map removes it, nearest within {@code radius} blocks. */
+    public static boolean removeNear(double worldX, double worldZ, double radius) {
+        if (!isActive() || !hasNation() || planned.isEmpty()) return false;
+        int best = -1;
+        double bestD = radius * radius;
+        for (int i = 0; i < planned.size(); i++) {
+            double dx = planned.get(i)[0] - worldX, dz = planned.get(i)[1] - worldZ;
+            double d = dx * dx + dz * dz;
+            if (d <= bestD) { bestD = d; best = i; }
+        }
+        if (best < 0) return false;
+        remove(best);
+        return true;
+    }
+
+    private static void remove(int i) {
+        if (i < 0 || i >= planned.size()) return;
+        planned.remove(i);
+        if (i < ids.size()) ids.remove(i);
+        version++;
+    }
+
+    /** Escape while the "+" is armed cancels it rather than closing the map. */
+    public static boolean disarm() {
+        if (!armed) return false;
+        armed = false;
+        return true;
+    }
+
+    /** Throws away the planned towns but keeps the nation, so you can start the plan over. */
+    public static void clearPlan() {
+        if (planned.isEmpty()) return;
+        planned.clear();
+        ids.clear();
+        valid = new boolean[0];
+        shortfall = new int[0];
+        hovered = -1;
+        version++;
     }
 
     // ── Counter HUD ──────────────────────────────────────────────────────────
@@ -175,8 +255,12 @@ public final class PlanningOverlay {
             return;
         }
 
-        int count = planned.size() + 1;                     // + the "+" chip
-        int chipW = Math.max(26, tr.width("T" + Math.max(1, planned.size())) + 12);
+        int count = planned.size() + 1 + (planned.isEmpty() ? 0 : 1);   // + the "+" chip, + "x" to clear
+        // Sized to the widest label actually on screen. Ids no longer track the count -- remove T1 from
+        // three towns and you are left with T2 and T3 -- so measuring the count would under-size the chips.
+        String widest = "T1";
+        for (int i = 0; i < planned.size(); i++) if (label(i).length() > widest.length()) widest = label(i);
+        int chipW = Math.max(26, tr.width(widest) + 12);
 
         // Chips fill left→right and wrap onto a new row underneath. The grid is capped at the screen middle
         // horizontally, and must finish above the map-toggle column so it never overlaps those buttons.
@@ -196,7 +280,15 @@ public final class PlanningOverlay {
         // Header shows which nation the plan belongs to, and flags any towns that can't legally be reached.
         int bad = 0;
         for (int i = 0; i < planned.size(); i++) if (!isValid(i)) bad++;
-        String head = nation + " · +" + planned.size() + (bad > 0 ? " · " + bad + " out of range" : "");
+        String head = nation + " \u00b7 +" + planned.size();
+        if (bad > 0) {
+            // Name the gap: the first town that misses, and by how far, beats a bare "out of range".
+            int firstBad = -1;
+            for (int i = 0; i < planned.size() && firstBad < 0; i++) if (!isValid(i)) firstBad = i;
+            int miss = firstBad >= 0 ? shortfall(firstBad) : 0;
+            head += " \u00b7 " + bad + " unreachable";
+            if (miss > 0) head += " (" + label(firstBad) + " by " + miss + "m)";
+        }
         int headW = Math.max(chipW, tr.width(head) + 10);
         ctx.fill(LEFT - 1, TOP - 1, LEFT + headW + 1, TOP + CHIP_H + 1, BORDER);
         ctx.fill(LEFT, TOP, LEFT + headW, TOP + CHIP_H, BG);
@@ -210,25 +302,26 @@ public final class PlanningOverlay {
             int cx = LEFT + col * (chipW + COL_GAP);
             int cy = gridTop + row * (CHIP_H + CHIP_GAP);
             boolean isPlus = i == planned.size();
+            boolean isClear = i == planned.size() + 1;
             boolean hov = mx >= cx && mx < cx + chipW && my >= cy && my < cy + CHIP_H;
             boolean lit = isPlus && armed;
-            boolean badChip = !isPlus && !isValid(i);
-            if (hov && !isPlus) hoverIdx = i;
+            boolean badChip = !isPlus && !isClear && !isValid(i);
+            if (hov && !isPlus && !isClear) hoverIdx = i;
 
             int frame = lit ? CHIP_ON : badChip ? CHIP_BAD : BORDER;
             ctx.fill(cx - 1, cy - 1, cx + chipW + 1, cy + CHIP_H + 1, frame);
             ctx.fill(cx, cy, cx + chipW, cy + CHIP_H, badChip ? CHIP_BAD_BG : CHIP_BG);
-            String label = isPlus ? "+" : "T" + (i + 1);
+            String label = isPlus ? "+" : isClear ? "\u00d7" : label(i);
             int tw = tr.width(label);
             ctx.text(tr, label, cx + (chipW - tw) / 2, cy + 3,
                     lit ? CHIP_ON : badChip ? CHIP_BAD : hov ? 0xFFFFFFFF : CHIP_TEXT, false);
-            hits.add(new Hit(cx, cy, chipW, CHIP_H, isPlus ? -1 : i));
+            hits.add(new Hit(cx, cy, chipW, CHIP_H, isPlus ? -1 : isClear ? -2 : i));
         }
         hovered = hoverIdx;
 
         if (armed) {   // tell the user what the armed "+" is waiting for
             int hy = gridTop + usedRows * (CHIP_H + CHIP_GAP) + 2;
-            String hint = "MouseButtonEvent the map to place";
+            String hint = "Click the map to place  ·  shift to keep placing";
             int hw = tr.width(hint) + 10;
             if (hy + CHIP_H < bottomLimit) {
                 ctx.fill(LEFT - 1, hy - 1, LEFT + hw + 1, hy + CHIP_H + 1, BORDER);
@@ -247,21 +340,25 @@ public final class PlanningOverlay {
         double my = UiScale.active() ? UiScale.unscale(screenY, TOP) : screenY;
         for (Hit h : hits) {
             if (mx >= h.x() && mx < h.x() + h.w() && my >= h.y() && my < h.y() + h.h()) {
-                if (h.index() < 0) armed = !armed;
-                else if (h.index() < planned.size()) { planned.remove(h.index()); version++; }
+                if (h.index() == -1) armed = !armed;
+                else if (h.index() == -2) clearPlan();
+                else if (h.index() < planned.size()) remove(h.index());
                 return true;
             }
         }
         return false;
     }
 
+    // Window.getWidth() is the framebuffer, which is twice the screen on a HiDPI display -- using it
+    // here put the cursor at half its real position, so chips lit up under the wrong chip or not at all.
+    // getScaledXPos is vanilla's own conversion and divides by the screen size, which is the right one.
     private static int mouseX() {
         var mc = net.minecraft.client.Minecraft.getInstance();
-        return (int) (mc.mouseHandler.xpos() * mc.getWindow().getGuiScaledWidth() / mc.getWindow().getWidth());
+        return (int) mc.mouseHandler.getScaledXPos(mc.getWindow());
     }
 
     private static int mouseY() {
         var mc = net.minecraft.client.Minecraft.getInstance();
-        return (int) (mc.mouseHandler.ypos() * mc.getWindow().getGuiScaledHeight() / mc.getWindow().getHeight());
+        return (int) mc.mouseHandler.getScaledYPos(mc.getWindow());
     }
 }

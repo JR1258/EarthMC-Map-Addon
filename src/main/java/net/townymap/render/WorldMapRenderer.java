@@ -2114,7 +2114,7 @@ public class WorldMapRenderer {
             boolean ok = net.townymap.gui.PlanningOverlay.isValid(i);
             boolean hot = i == hoverIdx;
             int accent = ok ? 0xFF6FD3A0 : 0xFFE2564E;
-            String label = "T" + (i + 1);
+            String label = net.townymap.gui.PlanningOverlay.label(i);
             int lw = client.font.width(label);
 
             // A hovered pin gets a halo ring so it's obvious which chip points where.

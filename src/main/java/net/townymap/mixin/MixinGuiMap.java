@@ -487,6 +487,13 @@ public abstract class MixinGuiMap {
             double[] world = overlayWorldFromScreen(click.x(), click.y(), sw, sh);
             if (world == null) return;
 
+            double dimMul = TownyMapMod.worldMapOverlayScale();
+            double guiScale = (screenScale > 0) ? scale / screenScale : scale;
+            if (guiScale > 0.0 && TownyMapMod.onPlanningRemoveAt(world[0], world[1], dimMul / guiScale)) {
+                cir.setReturnValue(true);
+                return;
+            }
+
             TownyMapMod.onMapRightClick(world[0], world[1], (int) click.x(), (int) click.y());
             cir.setReturnValue(true);
         } catch (Exception e) {
@@ -521,6 +528,10 @@ public abstract class MixinGuiMap {
                     cir.setReturnValue(true);
                     return;
                 }
+            }
+            if (input.key() == InputConstants.KEY_ESCAPE && TownyMapMod.onPlanningEscape()) {
+                cir.setReturnValue(true);
+                return;
             }
             TownSearchOverlay.ClickResult result = TownyMapMod.onTownSearchKeyPressed(input);
             if (result.consumed()) {

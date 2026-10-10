@@ -505,6 +505,9 @@ public final class TownSearchOverlay {
         caret = i;
     }
 
+    /** Shift state, for other overlays -- each branch reads the keyboard its own way, so share this. */
+    public static boolean shiftHeld() { return shiftDown(); }
+
     private static boolean shiftDown() {
         return InputConstants.isKeyDown(InputConstants.KEY_LSHIFT)
                 || InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);

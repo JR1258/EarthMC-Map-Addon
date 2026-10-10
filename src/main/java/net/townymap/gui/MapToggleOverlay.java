@@ -248,15 +248,7 @@ public final class MapToggleOverlay {
 
     private static void drawTexturedButton(DrawContext ctx, int x, int y, int w, int h,
                                            String label, boolean active, int textColor) {
-        if (DarkButtons.enabled()) {
-            DarkButtons.draw(ctx, x, y, w, h, label, active, textColor, scaledMouseX(), scaledMouseY());
-            return;
-        }
-        ButtonWidget button = ButtonWidget.builder(coloredText(label, textColor), ignored -> {})
-                .dimensions(x, y, w, h)
-                .build();
-        button.active = active;
-        button.render(ctx, scaledMouseX(), scaledMouseY(), 0.0F);
+        DarkButtons.button(ctx, x, y, w, h, label, active, textColor, scaledMouseX(), scaledMouseY());
     }
 
     private static Text coloredText(String label, int textColor) {

@@ -21,6 +21,27 @@ public final class DarkButtons {
         return c != null && c.darkButtons;
     }
 
+    /**
+     * Draws a button in whichever style the mod is set to -- the dark slate body, or a real vanilla
+     * widget. Everything that draws a button goes through here so the on-map UI stays one style:
+     * the toggle column, the settings button, and the planning chips.
+     */
+    public static void button(DrawContext ctx, int x, int y, int w, int h, String label,
+                              boolean active, int textColor, int mouseX, int mouseY) {
+        if (enabled()) {
+            draw(ctx, x, y, w, h, label, active, textColor, mouseX, mouseY);
+            return;
+        }
+        net.minecraft.client.gui.widget.ButtonWidget widget =
+                net.minecraft.client.gui.widget.ButtonWidget.builder(
+                        net.minecraft.text.Text.literal(label).setStyle(
+                                net.minecraft.text.Style.EMPTY.withColor(textColor & 0xFFFFFF)),
+                        ignored -> {})
+                .dimensions(x, y, w, h).build();
+        widget.active = active;
+        widget.render(ctx, mouseX, mouseY, 0.0F);
+    }
+
     public static void draw(DrawContext ctx, int x, int y, int w, int h, String label,
                             boolean active, int textColor, int mouseX, int mouseY) {
         boolean hover = active && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;

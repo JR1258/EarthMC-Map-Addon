@@ -2103,19 +2103,56 @@ public class WorldMapRenderer {
 
             // A hovered pin gets a halo ring so it's obvious which chip points where.
             if (hot) {
-                drawSmoothRing(ctx, x, y, 9.0, accent);
-                drawSmoothRing(ctx, x, y, 10.0, accent);
+                drawSmoothRing(ctx, x, y, 12.0, accent);
+                drawSmoothRing(ctx, x, y, 13.0, accent);
             }
-            // Cross-hair marker at the exact spot.
-            ctx.fill(x - 4, y - 1, x + 4, y + 1, accent);
-            ctx.fill(x - 1, y - 4, x + 1, y + 4, accent);
-            ctx.fill(x - 2, y - 2, x + 2, y + 2, 0xFF101114);
+            drawPin(ctx, x, y, accent, hot);
 
             // Label sits just above, on its own plate so it stays readable over any terrain.
-            int lx = x - lw / 2, ly = y - 16;
+            int lx = x - lw / 2, ly = y - 29;
             ctx.fill(lx - 3, ly - 2, lx + lw + 3, ly + 10, hot ? 0xF0101114 : 0xC0101114);
             ctx.fill(lx - 3, ly - 2, lx + lw + 3, ly - 1, accent);
             ctx.drawText(client.textRenderer, label, lx, ly, ok ? 0xFFFFFFFF : accent, false);
+        }
+    }
+
+    /**
+     * A map pin for a planned town: a round head on a short stem, standing on the exact spot.
+     *
+     * <p>It used to be a cross-hair, which read as a cursor rather than a place and vanished against
+     * busy terrain. A pin has a silhouette, so it survives whatever is underneath it: the head carries
+     * the valid/unreachable colour, a dark outline separates it from the map, and a shadow under the
+     * tip stops it floating. The tip, not the head, is the town's position.
+     */
+    private static void drawPin(DrawContext ctx, int x, int y, int accent, boolean hot) {
+        final int OUTLINE = 0xFF0C0D10;
+        final int HEAD_Y = y - 10;          // centre of the head, above the point it marks
+        // Shadow: a squashed smear on the ground so the pin reads as standing on the spot.
+        ctx.fill(x - 4, y - 1, x + 4, y, 0x40000000);
+        ctx.fill(x - 2, y, x + 2, y + 1, 0x55000000);
+
+        // Stem, narrowing to a single pixel at the tip so it points at one block, not a smudge.
+        ctx.fill(x - 2, HEAD_Y, x + 2, y - 3, OUTLINE);
+        ctx.fill(x - 1, HEAD_Y, x + 1, y - 4, accent);
+        ctx.fill(x - 1, y - 3, x + 1, y - 1, OUTLINE);
+        ctx.fill(x, y - 1, x + 1, y, OUTLINE);
+
+        // Head: outlined disc with a hole punched in it, which reads as a pin rather than a dot.
+        disc(ctx, x, HEAD_Y, 6, OUTLINE);
+        disc(ctx, x, HEAD_Y, 5, accent);
+        // A radius-2 disc is a rectangle at this size, so the hole is drawn as a cross of two bars --
+        // the corners it leaves off are what make it read as round.
+        int core = hot ? 0xFFFFFFFF : OUTLINE;
+        ctx.fill(x - 2, HEAD_Y - 1, x + 2, HEAD_Y + 2, core);
+        ctx.fill(x - 1, HEAD_Y - 2, x + 1, HEAD_Y + 3, core);
+    }
+
+    /** Filled circle by scanline -- the GUI layer has rectangles, and these are only a few pixels across. */
+    private static void disc(DrawContext ctx, int cx, int cy, int r, int color) {
+        for (int dy = -r; dy <= r; dy++) {
+            int dx = (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
+            if (dx <= 0) continue;
+            ctx.fill(cx - dx, cy + dy, cx + dx, cy + dy + 1, color);
         }
     }
 

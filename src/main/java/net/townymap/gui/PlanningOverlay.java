@@ -262,8 +262,13 @@ public final class PlanningOverlay {
         boolean scaled = UiScale.active();
         if (scaled) UiScale.push(ctx, LEFT, TOP);
 
+        // No nation yet: just the prompt, and nothing else -- the chips below have nothing to count.
+        if (!hasNation()) {
             String msg = "Planning \u00b7 choose a nation";
             DarkButtons.button(ctx, LEFT, TOP, tr.width(msg) + 12, CHIP_H, msg, false, CHIP_TEXT, -1, -1);
+            if (scaled) UiScale.pop(ctx);
+            return;
+        }
 
         int count = planned.size() + 1 + (planned.isEmpty() ? 0 : 1);   // + the "+" chip, + "x" to clear
         // Sized to the widest label actually on screen. Ids no longer track the count -- remove T1 from

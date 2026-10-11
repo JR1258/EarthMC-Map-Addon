@@ -46,9 +46,6 @@ public final class PlanningOverlay {
     private static String nation = "";
     /** Planned town centres in world blocks: {x, z}. */
     private static final List<int[]> planned = new ArrayList<>();
-    /** Label number per planned town, kept across removals so T3 stays T3 when T2 goes. */
-    private static final List<Integer> ids = new ArrayList<>();
-    private static int nextId = 1;
     /** How far outside the reachable area each town sits, in blocks; 0 when it is reachable. */
     private static volatile int[] shortfall = new int[0];
     /** True once "+" is clicked: the next left-click on the map drops a town instead of selecting. */
@@ -65,9 +62,14 @@ public final class PlanningOverlay {
     public static int version() { return version; }
     public static int hoveredIndex() { return hovered; }
 
-    /** The stable label for a planned town, so the chip and its map pin always agree. */
+    /**
+     * The label for a planned town: its position in the plan, counting from one.
+     *
+     * <p>Numbered by position rather than by a per-town id, so deleting the second of three leaves T1
+     * and T2 rather than T1 and T3. The ids read as a count, and a count that skips is just confusing.
+     */
     public static String label(int i) {
-        return "T" + (i >= 0 && i < ids.size() ? ids.get(i) : i + 1);
+        return "T" + (i + 1);
     }
 
     /** Blocks this town is short of the reachable area, or 0 when it is in range. */
@@ -152,7 +154,7 @@ public final class PlanningOverlay {
     /** Sets the nation to plan for and shows its range. Called by the search bar and the info-panel button. */
     public static void setNation(String name) {
         if (name == null || name.isBlank()) return;
-        if (!name.equalsIgnoreCase(nation)) { planned.clear(); ids.clear(); version++; }   // new nation, new plan
+        if (!name.equalsIgnoreCase(nation)) { planned.clear(); version++; }   // new nation, new plan
         nation = name;
         TownSearchOverlay.showNationRange(name);
     }
@@ -161,7 +163,6 @@ public final class PlanningOverlay {
     public static void reset() {
         nation = "";
         planned.clear();
-        ids.clear();
         shortfall = new int[0];
         armed = false;
         hits.clear();
@@ -184,7 +185,6 @@ public final class PlanningOverlay {
     public static boolean placeAt(double worldX, double worldZ) {
         if (!armed || !hasNation()) return false;
         planned.add(new int[]{(int) Math.round(worldX), (int) Math.round(worldZ)});
-        ids.add(nextId++);
         // Holding shift keeps the "+" armed, so a chain of towns can be walked out in one go instead of
         // re-arming between every click.
         armed = TownSearchOverlay.shiftHeld();
@@ -210,7 +210,6 @@ public final class PlanningOverlay {
     private static void remove(int i) {
         if (i < 0 || i >= planned.size()) return;
         planned.remove(i);
-        if (i < ids.size()) ids.remove(i);
         // valid/shortfall are rebuilt by resolve(), which only runs while the nation's range is actually
         // being drawn -- so without dropping the removed town's entry here the header kept counting it,
         // and "2 unreachable" stayed at 2 after one of them was deleted.
@@ -246,7 +245,6 @@ public final class PlanningOverlay {
     public static void clearPlan() {
         if (planned.isEmpty()) return;
         planned.clear();
-        ids.clear();
         valid = new boolean[0];
         shortfall = new int[0];
         hovered = -1;
@@ -270,11 +268,8 @@ public final class PlanningOverlay {
         }
 
         int count = planned.size() + 1 + (planned.isEmpty() ? 0 : 1);   // + the "+" chip, + "x" to clear
-        // Sized to the widest label actually on screen. Ids no longer track the count -- remove T1 from
-        // three towns and you are left with T2 and T3 -- so measuring the count would under-size the chips.
-        String widest = "T1";
-        for (int i = 0; i < planned.size(); i++) if (label(i).length() > widest.length()) widest = label(i);
-        int chipW = Math.max(26, tr.getWidth(widest) + 12);
+        // Sized to the highest label, which is the longest once there are ten or more.
+        int chipW = Math.max(26, tr.getWidth(label(Math.max(0, planned.size() - 1))) + 12);
 
         // Chips fill left→right and wrap onto a new row underneath. The grid is capped at the screen middle
         // horizontally, and must finish above the map-toggle column so it never overlaps those buttons.

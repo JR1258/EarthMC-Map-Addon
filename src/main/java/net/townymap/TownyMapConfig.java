@@ -29,6 +29,13 @@ public class TownyMapConfig {
      */
     public boolean minimapExtensionsEnabled = true;
     public boolean minimapPlayersEnabled = true;
+    /**
+     * Draw town claims on the minimap. Off leaves the rest of the minimap overlay alone -- players,
+     * town names, the chunk grid and the squaremap layer all still draw. "Town Borders" is the world
+     * map's own switch and has never applied here, so without this the only way to drop claims from
+     * the minimap was to turn the whole overlay off.
+     */
+    public boolean minimapTownClaimsEnabled = true;
     public boolean hideMinimapInNether = false;
     // What our EarthMC overlay does outside the overworld (the EarthMC map is overworld-only, so in
     // the Nether the player's X/Z would otherwise place the overlay at the wrong spot):

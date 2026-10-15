@@ -233,6 +233,10 @@ public class TownyMapConfigScreen extends Screen {
                         v -> cfg.minimapIndicatorMode = v),
                 () -> cfg.minimapIndicatorMode == DEFAULTS.minimapIndicatorMode,
                 () -> cfg.minimapIndicatorMode = DEFAULTS.minimapIndicatorMode);
+        option("Town Claims On Minimap",
+                onOff(cfg.minimapTownClaimsEnabled, v -> cfg.minimapTownClaimsEnabled = v),
+                () -> cfg.minimapTownClaimsEnabled == DEFAULTS.minimapTownClaimsEnabled,
+                () -> cfg.minimapTownClaimsEnabled = DEFAULTS.minimapTownClaimsEnabled);
         option("Players On Minimap", onOff(cfg.minimapPlayersEnabled, v -> cfg.minimapPlayersEnabled = v),
                 () -> cfg.minimapPlayersEnabled == DEFAULTS.minimapPlayersEnabled,
                 () -> cfg.minimapPlayersEnabled = DEFAULTS.minimapPlayersEnabled);

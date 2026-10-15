@@ -262,7 +262,10 @@ public final class TownyMinimapOverlay {
 
         List<TownData> towns = api.getTowns(minimapWorld);
         VisibleRenderData renderData = cachedVisibleRenderData(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight);
-        lastRenderCanCoverWaypoints = squaremapRendered || config.chunkCounterEnabled || !renderData.fillSpans().isEmpty();
+        boolean claims = config.minimapTownClaimsEnabled;
+        // With claims hidden the overlay no longer paints over waypoints, so it must stop claiming it does.
+        lastRenderCanCoverWaypoints = squaremapRendered || config.chunkCounterEnabled
+                || (claims && !renderData.fillSpans().isEmpty());
 
         ctx.enableScissor(clip.left(), clip.top(), clip.right() + 1, clip.bottom() + 1);
         Matrix3x2fStack matrices = ctx.pose();
@@ -273,7 +276,9 @@ public final class TownyMinimapOverlay {
             matrices.scale((float) pixelsPerBlock, (float) pixelsPerBlock);
             matrices.translate((float) -playerX, (float) -playerZ);
 
-            if (clip.circular()) {
+            if (!claims) {
+                // nothing to fill
+            } else if (clip.circular()) {
                 fillVisibleTownSpansCircleClipped(ctx, renderData.fillSpans(), config, clip,
                         centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos);
             } else {
@@ -292,10 +297,12 @@ public final class TownyMinimapOverlay {
         ctx.enableScissor(clip.left(), clip.top(), clip.right() + 1, clip.bottom() + 1);
         try {
             if (clip.circular()) {
-                drawVisibleTownEdgesCircleClipped(ctx, renderData.edges(), config, clip,
-                        centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos);
-                drawOptimisticClaimChunks(ctx, clip,
-                        centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos);
+                if (claims) {
+                    drawVisibleTownEdgesCircleClipped(ctx, renderData.edges(), config, clip,
+                            centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos);
+                    drawOptimisticClaimChunks(ctx, clip,
+                            centerX, centerY, playerX, playerZ, pixelsPerBlock, sin, cos);
+                }
             } else {
                 matrices.pushMatrix();
                 try {
@@ -304,8 +311,11 @@ public final class TownyMinimapOverlay {
                     matrices.scale((float) pixelsPerBlock, (float) pixelsPerBlock);
                     matrices.translate((float) -playerX, (float) -playerZ);
 
-                    drawVisibleTownEdges(ctx, renderData.edges(), config);
-                    drawOptimisticClaimChunks(ctx);
+                    if (claims) {
+                        drawVisibleTownEdges(ctx, renderData.edges(), config);
+                        drawOptimisticClaimChunks(ctx);
+                    }
+                    // The chunk counter is its own feature and keeps drawing either way.
                     if (config.chunkCounterEnabled) {
                         // Pass the visible block rect so a large selection only draws what is on screen.
                         // Rotation means the diagonal is the worst case, hence the 1.5x margin.

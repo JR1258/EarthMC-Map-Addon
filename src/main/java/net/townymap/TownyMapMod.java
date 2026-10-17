@@ -2166,6 +2166,33 @@ public class TownyMapMod implements ClientModInitializer {
                 ChatFormatting.RED);
     }
 
+    private static String warnedGateAddress = null;
+
+    /**
+     * Says so when the mod is switched on but deliberately idle because of "EarthMC Only".
+     *
+     * <p>The toggle defaults to on and matches the server address against "earthmc.net", so anyone who
+     * reaches EarthMC by some other name -- a proxy, an alias, a bare IP -- gets an overlay that draws
+     * nothing at all, on both maps, with no error and nothing in the log. From the outside that is
+     * indistinguishable from the mod failing to load, which is how it tends to get reported. Said once
+     * per address, naming the address so it can be passed on, and the setting that turns it off.
+     */
+    private static void tickServerGateNotice() {
+        if (config == null || !config.earthmcOnly || isAccessBlocked()) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null) return;
+        ServerData server = client.getCurrentServer();
+        if (server == null || server.ip == null || server.ip.isBlank()) return;   // singleplayer
+        if (isOnEarthMcServer()) { warnedGateAddress = null; return; }
+        if (server.ip.equals(warnedGateAddress)) return;
+        warnedGateAddress = server.ip;
+        LOGGER.warn("[TownyMap] Idle on {}: the address is not recognised as EarthMC and \"EarthMC Only\" "
+                + "is on, so nothing is drawn on either map.", server.ip);
+        sendFeedback("EarthMC Map Addon is idle here: \"" + server.ip + "\" is not recognised as EarthMC. "
+                + "Turn off \"EarthMC Only\" in the mod settings to use it on this server.",
+                ChatFormatting.YELLOW);
+    }
+
     private static volatile boolean worldMapWasOpen = false;
 
     /**
@@ -2425,6 +2452,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
         tickPlayerDimensionChange();
         tickWorldMapInjectHealth();
+        tickServerGateNotice();
         tickWorldMapOpenState();
         tickXaeroDimensionSync();
         String key = activeWorldKey();

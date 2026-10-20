@@ -144,8 +144,9 @@ public class TownyMapMod implements ClientModInitializer {
     /** Prevents hammering EarthMC API when nations index fails to load. */
     private static volatile long lastNationIndexAttemptMs = 0;
     // Caches for hot-path string work (recomputed only when the input changes).
-    private static String activeServerAddress = null;
-    private static boolean activeServerResult = false;
+    /** Address and verdict published together -- see {@link #isOnEarthMcServer()}. */
+    private record ServerCheck(String address, boolean earthMc) {}
+    private static volatile ServerCheck serverCheck = null;
     private static String cachedSelfName = null;
     private static String cachedSelfKey = null;
 
@@ -3601,12 +3602,20 @@ public class TownyMapMod implements ClientModInitializer {
         // Cache the toLowerCase().contains() result per server address.  This is
         // called once per online player per frame (playerDotColor), so the string
         // allocation is hot; recompute only when the address actually changes.
+        // The address and the verdict are published as one object on purpose. They used to be two
+        // plain static fields, written one after the other and read from the render loop, the client
+        // tick and the fetch threads at once. A reader could arrive between the two writes, see an
+        // address that already matched, and take the verdict that had not been written yet -- and
+        // because matching the address is exactly what skips the recompute, that stale "not EarthMC"
+        // then stuck for the rest of the session. The mod would sit idle on EarthMC with every setting
+        // correct, which is not something anyone could be expected to diagnose.
         String address = server.address;
-        if (!address.equals(activeServerAddress)) {
-            activeServerAddress = address;
-            activeServerResult = address.toLowerCase(Locale.ROOT).contains("earthmc.net");
+        ServerCheck cached = serverCheck;
+        if (cached == null || !address.equals(cached.address())) {
+            cached = new ServerCheck(address, address.toLowerCase(Locale.ROOT).contains("earthmc.net"));
+            serverCheck = cached;   // one write, so a reader sees either the whole old pair or the whole new one
         }
-        return activeServerResult;
+        return cached.earthMc();
     }
 
     private static void showLookupResult(TownPopupData data, int screenX, int screenY,

@@ -54,7 +54,6 @@ public final class XaeroWaypointBridge {
         );
         waypoint.setOneoffDestination(true);
         set.add(waypoint, true);
-        session.getWaypointSession().setSetChangedTime(System.currentTimeMillis());
         return true;
     }
 
@@ -85,7 +84,6 @@ public final class XaeroWaypointBridge {
                 true
         );
         set.add(waypoint, true);
-        touch();
         return true;
     }
 
@@ -112,7 +110,6 @@ public final class XaeroWaypointBridge {
         for (Waypoint waypoint : toRemove) {
             set.remove(waypoint);
         }
-        touch();
     }
 
     private static WaypointSet currentWaypointSet() {
@@ -123,13 +120,6 @@ public final class XaeroWaypointBridge {
         MinimapWorld world = session.getWorldManager().getCurrentWorld();
         if (world == null) return null;
         return world.getCurrentWaypointSet();
-    }
-
-    private static void touch() {
-        MinimapSession session = BuiltInHudModules.MINIMAP.getCurrentSession();
-        if (session != null && session.getWaypointSession() != null) {
-            session.getWaypointSession().setSetChangedTime(System.currentTimeMillis());
-        }
     }
 
     private static void removePreviousTownyRoutes(WaypointSet set) {

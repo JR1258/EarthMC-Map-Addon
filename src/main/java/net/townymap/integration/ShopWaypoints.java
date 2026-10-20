@@ -41,8 +41,22 @@ public final class ShopWaypoints {
     /** Marks our shop waypoints so we only ever remove our own. */
     static final String SHOP_PREFIX = "QS: ";
 
-    /** How long after the command we keep reading chat for result lines. */
-    private static final long CAPTURE_WINDOW_MS = 3_000L;
+    /**
+     * How long to wait for the server to answer the command at all.
+     *
+     * <p>This used to be one flat three seconds measured from the moment the command was sent, which
+     * is the wrong thing to measure: it has to cover the round trip and QuickShop's own search across
+     * every shop on the server. On a busy server that regularly took longer, the window had already
+     * closed by the time the first line arrived, and the search produced nothing -- intermittently,
+     * depending only on how loaded the server was.
+     */
+    private static final long WAIT_FOR_FIRST_MS = 15_000L;
+
+    /** Once lines are arriving, how long a gap means the list has finished. */
+    private static final long QUIET_MS = 1_200L;
+
+    /** Absolute cap, so a reply that never comes cannot leave the window open indefinitely. */
+    private static final long MAX_CAPTURE_MS = 30_000L;
 
     /** Cap on waypoints per search, so a common item doesn't bury the minimap. */
     private static final int MAX_SHOPS = 8;
@@ -69,6 +83,8 @@ public final class ShopWaypoints {
     private static final Pattern LEGACY_COLOR = Pattern.compile("\u00a7[0-9a-fk-orA-FK-OR]");
 
     private static long captureUntilMs = 0L;
+    /** Hard stop for the current capture, independent of how often lines keep arriving. */
+    private static long captureHardStopMs = 0L;
     /** When the current batch times out. All of a search's waypoints are created together, so one
      *  timestamp covers the batch; a new search replaces the batch and restarts the clock. */
     private static long expireAtMs = 0L;
@@ -112,9 +128,22 @@ public final class ShopWaypoints {
 
     /** Opens a short window during which chat lines are treated as shop results. */
     public static void armCapture() {
-        captureUntilMs = System.currentTimeMillis() + CAPTURE_WINDOW_MS;
+        long now = System.currentTimeMillis();
+        captureUntilMs = now + WAIT_FOR_FIRST_MS;
+        captureHardStopMs = now + MAX_CAPTURE_MS;
         pendingItem = "";
         pending.clear();
+    }
+
+    /**
+     * Keeps the window open while the server is still talking.
+     *
+     * <p>A long result list can take longer to print than any fixed window would allow, so each line
+     * that matches buys a little more time; the batch closes once the lines stop rather than on a
+     * deadline set before the reply even started.
+     */
+    private static void extendCapture() {
+        captureUntilMs = Math.min(captureHardStopMs, System.currentTimeMillis() + QUIET_MS);
     }
 
     /**
@@ -131,6 +160,7 @@ public final class ShopWaypoints {
         Matcher header = HEADER.matcher(line);
         if (header.matches()) {
             pendingItem = shorten(header.group(1));
+            extendCapture();   // the reply has started; from here we wait on the lines, not the clock
             return true;
         }
 
@@ -147,6 +177,7 @@ public final class ShopWaypoints {
         } catch (NumberFormatException ignored) {
             // A malformed number means this line isn't the shop line we think it is; skip it.
         }
+        extendCapture();
         return true;
     }
 

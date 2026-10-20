@@ -70,12 +70,17 @@ public final class ShopWaypoints {
     private static final Pattern HEADER = Pattern.compile(
             "^\\s*Nearby Shops matching\\s+(.+?)\\s*:\\s*$", Pattern.CASE_INSENSITIVE);
 
-    // "- Info: Selling 49 Price: 19G each X: 50105 Y: 66 Z: -5435 Distance: 39 block(s)".
-    // Deliberately loose about the currency suffix and separators: the numbers and their labels are
-    // the parts that carry meaning, and being strict about "G each" would break on a currency rename.
+    // QuickShop builds this line from the template
+    //   "- Info: {0} Price: {1} X: {2} Y: {3} Z: {4} Distance: {5} block(s)"
+    // so only the labels and the three coordinates are actually fixed. Everything between "Info:" and
+    // "Price:", and between "Price:" and "X:", is whatever the server's own formatters produced.
+    //
+    // This used to demand the literal word "each" before the X, taken from one observed line. It is
+    // not in the template -- it comes from inside the price placeholder, so it appears for some shops
+    // and not others, and every line without it was silently skipped. That is why a search would mark
+    // a few of its results and quietly drop the rest.
     private static final Pattern SHOP_LINE = Pattern.compile(
-            "-?\\s*Info:\\s*(Selling|Buying)\\s+(\\d+)\\s+"
-                    + "Price:\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(\\S*?)\\s*each\\s+"
+            "Info:\\s*(.*?)\\s*Price:\\s*(.*?)\\s*"
                     + "X:\\s*(-?\\d+)\\s+Y:\\s*(-?\\d+)\\s+Z:\\s*(-?\\d+)",
             Pattern.CASE_INSENSITIVE);
 
@@ -168,12 +173,15 @@ public final class ShopWaypoints {
         if (!m.find()) return false;
 
         try {
-            boolean selling = m.group(1).toLowerCase(Locale.ROOT).startsWith("sell");
-            String price = m.group(3) + (m.group(4) == null ? "" : m.group(4));
+            // "Selling 49" / "Buying 12" -- only which way round it is matters, and a line that says
+            // neither is still worth a waypoint, so it falls back to selling rather than being dropped.
+            String info = m.group(1) == null ? "" : m.group(1).toLowerCase(Locale.ROOT);
+            boolean selling = !info.contains("buy");
+            String price = m.group(2) == null ? "" : m.group(2).trim();
             pending.add(new Listing(selling, price,
-                    Integer.parseInt(m.group(5)),
-                    Integer.parseInt(m.group(6)),
-                    Integer.parseInt(m.group(7))));
+                    Integer.parseInt(m.group(3)),
+                    Integer.parseInt(m.group(4)),
+                    Integer.parseInt(m.group(5))));
         } catch (NumberFormatException ignored) {
             // A malformed number means this line isn't the shop line we think it is; skip it.
         }

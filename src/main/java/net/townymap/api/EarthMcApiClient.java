@@ -1017,6 +1017,25 @@ public class EarthMcApiClient {
         }
     }
 
+    /**
+     * Inflates the body when the server honoured our gzip request; returns plain text otherwise.
+     *
+     * <p>Java's HttpClient neither asks for compression nor decompresses it, so without this every
+     * call took the full uncompressed response. A 100-name /towns reply is 323 KB raw against 82 KB
+     * gzipped, and the stats sweeps send dozens to hundreds of those, so this is the difference
+     * between a leaderboard costing tens of megabytes and costing a few.
+     */
+    private static String decodeBody(HttpResponse<byte[]> resp) throws java.io.IOException {
+        boolean gzip = resp.headers().firstValue("Content-Encoding")
+                .map(v -> v.toLowerCase(java.util.Locale.ROOT).contains("gzip")).orElse(false);
+        byte[] body = resp.body();
+        if (!gzip) return new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        try (java.util.zip.GZIPInputStream in =
+                     new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
     private String post(String url, String body) {
         try {
             HttpRequest req = HttpRequest.newBuilder()
@@ -1024,10 +1043,11 @@ public class EarthMcApiClient {
                     .timeout(java.time.Duration.ofSeconds(15))
                     .header("Content-Type", "application/json")
                     .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                    .header("Accept-Encoding", "gzip")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 200) return resp.body();
+            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() == 200) return decodeBody(resp);
             // 404 just means "no such entity" (an opt-out, usually) and is expected; logging one line per
             // lookup buried the log. 429 means we are rate-limited and every other request is failing too,
             // so say that once rather than several hundred times.
@@ -1053,10 +1073,11 @@ public class EarthMcApiClient {
                     .uri(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(20))
                     .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                    .header("Accept-Encoding", "gzip")
                     .GET()
                 .build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 200) return resp.body();
+            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() == 200) return decodeBody(resp);
             LOGGER.warn("[TownyMap] EarthMC API {} -> HTTP {}", url, resp.statusCode());
         } catch (Exception e) {
             LOGGER.warn("[TownyMap] EarthMC API request failed: {}", e.getMessage());

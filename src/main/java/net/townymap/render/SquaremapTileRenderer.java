@@ -595,7 +595,7 @@ final class SquaremapTileRenderer {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(tileUrl(key)))
                 .timeout(Duration.ofSeconds(20))
-                .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                .header("User-Agent", net.townymap.util.UserAgent.get())
                 .GET();
         // Stale-checks re-downloaded ~180 KB per tile even when the imagery had not changed. With the
         // previous ETag attached the server answers 304 and sends nothing; a screen full of tiles that

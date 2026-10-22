@@ -596,7 +596,7 @@ public class SquaremapApiClient {
             HttpRequest.Builder reqB = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(20))
-                    .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                    .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET();
             // "Only send it if it changed since the copy I already have." markers.json regenerates every

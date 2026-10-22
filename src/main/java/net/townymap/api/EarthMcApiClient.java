@@ -1042,7 +1042,7 @@ public class EarthMcApiClient {
                     .uri(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(15))
                     .header("Content-Type", "application/json")
-                    .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                    .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
@@ -1072,7 +1072,7 @@ public class EarthMcApiClient {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(20))
-                    .header("User-Agent", "TownyMapAddon/1.0 (Fabric Mod)")
+                    .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET()
                     .build();

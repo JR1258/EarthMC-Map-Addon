@@ -58,6 +58,14 @@ public class TownyMapConfig {
      * tile, which is the heavier recovery for a tile that cached badly.
      */
     public boolean refreshEntireMap = false;
+    /**
+     * Whether picking a search result also chooses a zoom that frames the whole claim. Off, a jump keeps
+     * whatever zoom you were at -- which from full zoom-out means being centred on a town a few pixels
+     * wide and none the wiser.
+     */
+    public boolean searchZoomToFit = true;
+    /** Whether a search jump flashes the claim it landed on, so it stands out from its neighbours. */
+    public boolean searchFlash = true;
     public boolean infoDisplayTownEnabled = true;
     public boolean infoDisplayNearbyPlayersEnabled = true;
     public boolean infoDisplayNearestTownEnabled = true;

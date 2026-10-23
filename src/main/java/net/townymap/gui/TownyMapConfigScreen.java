@@ -265,6 +265,12 @@ public class TownyMapConfigScreen extends Screen {
                 onOff(cfg.refreshEntireMap, v -> cfg.refreshEntireMap = v),
                 () -> cfg.refreshEntireMap == DEFAULTS.refreshEntireMap,
                 () -> cfg.refreshEntireMap = DEFAULTS.refreshEntireMap);
+        option("Search Zoom To Fit", onOff(cfg.searchZoomToFit, v -> cfg.searchZoomToFit = v),
+                () -> cfg.searchZoomToFit == DEFAULTS.searchZoomToFit,
+                () -> cfg.searchZoomToFit = DEFAULTS.searchZoomToFit);
+        option("Search Result Flash", onOff(cfg.searchFlash, v -> cfg.searchFlash = v),
+                () -> cfg.searchFlash == DEFAULTS.searchFlash,
+                () -> cfg.searchFlash = DEFAULTS.searchFlash);
         action("Reload Claims", TownyMapMod::refreshTownClaimsFromSettings);
         refreshKeyButton = Button.builder(refreshKeyLabel(), b -> {
             awaitingRefreshKey = true;

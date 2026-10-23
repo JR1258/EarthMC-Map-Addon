@@ -56,13 +56,30 @@ public final class TownyMinimapOverlay {
     private static final double MIN_MINIMAP_CHUNK_GRID_SPACING = 3.5;
     private static final int CHUNK_SIZE = 16;
     private static final int MINIMAP_CHUNK_GRID_COLOR = 0xCC000000;
-    private static List<TownData> cachedTownSource = List.of();
-    private static int cachedMinChunkX;
-    private static int cachedMinChunkZ;
-    private static int cachedChunkWidth;
-    private static int cachedChunkHeight;
-    private static VisibleRenderData cachedRenderData =
-            new VisibleRenderData(new TownData[0], List.of(), List.of(), List.of());
+    /**
+     * The mask currently being drawn, together with the window it was built for.
+     *
+     * <p>Published as one object so a reader never sees the data and the window it describes disagree:
+     * the build runs off the render thread, and five separate fields could be read half-updated.
+     */
+    private record MaskSnapshot(List<TownData> towns, int minChunkX, int minChunkZ,
+                                int chunkWidth, int chunkHeight, VisibleRenderData data) {
+        boolean covers(List<TownData> t, int x, int z, int w, int h) {
+            return towns == t && minChunkX == x && minChunkZ == z && chunkWidth == w && chunkHeight == h;
+        }
+    }
+
+    private static volatile MaskSnapshot maskSnapshot;
+    /** One build at a time; a window that moves again is picked up by the next frame's request. */
+    private static final java.util.concurrent.atomic.AtomicBoolean maskBuilding =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.ExecutorService maskExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "TownyMap minimap mask");
+                t.setDaemon(true);
+                return t;
+            });
+
     private static int lastSyncedXaeroChunkGrid = Integer.MIN_VALUE;
     private static long lastXaeroChunkGridSyncAttemptMs;
     private static long lastMinimapShapeReadAtMs;
@@ -91,12 +108,9 @@ public final class TownyMinimapOverlay {
     }
 
     public static void invalidateTownCache() {
-        cachedTownSource = List.of();
-        cachedMinChunkX = 0;
-        cachedMinChunkZ = 0;
-        cachedChunkWidth = 0;
-        cachedChunkHeight = 0;
-        cachedRenderData = new VisibleRenderData(new TownData[0], List.of(), List.of(), List.of());
+        // Dropping it rather than replacing it with an empty one: with nothing to fall back on the next
+        // frame builds inline, so a data swap shows the new claims immediately instead of a blank pass.
+        maskSnapshot = null;
     }
 
     /**
@@ -656,18 +670,65 @@ public final class TownyMinimapOverlay {
         return chunkTowns;
     }
 
+    /**
+     * The chunk mask for the visible window, built off the render thread.
+     *
+     * <p>A rebuild walks every town, rejects by bounding box, then runs a point-in-polygon per chunk for
+     * the ones that overlap -- across a window of up to {@code MAX_CHUNK_CELLS_PER_FRAME} cells. Done
+     * inline that lands entirely on one frame, so the overlay cost nothing on most frames and then
+     * stalled on the one that noticed the window had moved. That is what a stutter is.
+     *
+     * <p>So a miss now starts the build on a worker and keeps drawing the previous window meanwhile.
+     * The window is padded by {@code MINIMAP_RENDER_CACHE_PADDING_CHUNKS} and snapped to a step, which
+     * is the slack that makes this safe: what is already drawn still covers the screen while the new
+     * mask is produced. Same total work, just never on the frame's critical path.
+     *
+     * <p>The first build has nothing to fall back on, so it is paid inline rather than showing an empty
+     * overlay for a few frames.
+     */
     private static VisibleRenderData cachedVisibleRenderData(List<TownData> towns, int minChunkX, int minChunkZ,
                                                              int chunkWidth, int chunkHeight) {
-        if (towns == cachedTownSource
-                && minChunkX == cachedMinChunkX
-                && minChunkZ == cachedMinChunkZ
-                && chunkWidth == cachedChunkWidth
-                && chunkHeight == cachedChunkHeight) {
-            return cachedRenderData;
+        MaskSnapshot snap = maskSnapshot;
+        if (snap != null && snap.covers(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight)) {
+            return snap.data();
         }
+        if (snap == null) {
+            VisibleRenderData built = buildMask(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight);
+            maskSnapshot = new MaskSnapshot(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight, built);
+            return built;
+        }
+        requestMaskBuild(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight);
+        return snap.data();
+    }
 
+    /**
+     * Queues one rebuild. If the window moves again while it runs, the next frame simply asks again --
+     * the flag means only one is ever in flight, so a fast-moving player cannot pile them up.
+     */
+    private static void requestMaskBuild(List<TownData> towns, int minChunkX, int minChunkZ,
+                                         int chunkWidth, int chunkHeight) {
+        if (!maskBuilding.compareAndSet(false, true)) return;
+        try {
+            maskExecutor.execute(() -> {
+                try {
+                    VisibleRenderData built = buildMask(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight);
+                    maskSnapshot = new MaskSnapshot(towns, minChunkX, minChunkZ, chunkWidth, chunkHeight, built);
+                } catch (Throwable ignored) {
+                    // Keep drawing the previous mask; the next frame will ask for this window again.
+                } finally {
+                    maskBuilding.set(false);
+                }
+            });
+        } catch (RuntimeException e) {
+            maskBuilding.set(false);   // executor refused the task (shutting down)
+        }
+    }
+
+    /** The actual work: rasterise the towns covering this window, then derive spans, edges and labels. */
+    private static VisibleRenderData buildMask(List<TownData> towns, int minChunkX, int minChunkZ,
+                                               int chunkWidth, int chunkHeight) {
         // One chunk of margin around the window: without it a town that continues past the edge looks like
-        // it ends there, and a border was drawn along the window boundary — a line that moved with the
+        // it ends there, and a border was drawn along the window boundary -- a line that moved with the
         // window as you walked rather than sitting on the real claim edge.
         int padMinChunkX = minChunkX - EDGE_MARGIN_CHUNKS;
         int padMinChunkZ = minChunkZ - EDGE_MARGIN_CHUNKS;
@@ -678,15 +739,7 @@ public final class TownyMinimapOverlay {
         // meant the minimap showed claims that don't exist -- corridors, notches, and any gap a town
         // happened to surround. The world map never did this, which is why the two disagreed. The chunk
         // mask now reflects the claim data exactly: if a chunk isn't claimed, it isn't drawn as claimed.
-        VisibleRenderData renderData = buildRenderData(chunkTowns, padMinChunkX, padMinChunkZ,
-                padWidth, padHeight, EDGE_MARGIN_CHUNKS);
-        cachedTownSource = towns;
-        cachedMinChunkX = minChunkX;
-        cachedMinChunkZ = minChunkZ;
-        cachedChunkWidth = chunkWidth;
-        cachedChunkHeight = chunkHeight;
-        cachedRenderData = renderData;
-        return cachedRenderData;
+        return buildRenderData(chunkTowns, padMinChunkX, padMinChunkZ, padWidth, padHeight, EDGE_MARGIN_CHUNKS);
     }
 
     private static VisibleRenderData buildRenderData(TownData[] chunkTowns, int minChunkX, int minChunkZ,

@@ -50,6 +50,8 @@ public class SquaremapApiClient {
     // captures essentially every update — faster just re-downloads identical data. This is the live player
     // rate, independent of the (coarser, non-UI) refreshPlayersSecs config.
     private static final long PLAYER_REFRESH_MS = 1_000L;
+    /** Cadence with only the minimap up -- see {@link #tickPlayers()}. */
+    private static final long PLAYER_REFRESH_IDLE_MS = 3_000L;
     private static final long PLAYER_HISTORY_SAVE_DELAY_MS = 2_000L;
     private static final Pattern BOLD_TEXT =
             Pattern.compile("(?is)<b[^>]*>(.*?)</b>");
@@ -375,9 +377,23 @@ public class SquaremapApiClient {
      *  world map and the minimap at the live PLAYER_REFRESH_MS rate (~1s, matching squaremap's own update
      *  cadence) and de-duped via playerFetchRunning, so positions stay live during normal play (minimap)
      *  and not just while the full map is open. */
+    /**
+     * Polls squaremap's player feed, faster while the world map is open.
+     *
+     * <p>players.json is the one document that never revalidates: it changes every tick by design, so
+     * every poll is a full body and the interval is a straight multiplier on bandwidth -- roughly 24 MB
+     * an hour at one second. That rate only buys anything on the world map, where dots are watched
+     * moving across a wide view. On the minimap alone, where they are a handful of pixels near the
+     * player, a slower poll is not visible, so it is not worth paying for.
+     *
+     * <p>markers.json is deliberately left alone: it carries an ETag and only regenerates every few
+     * minutes, so the polls in between already cost nothing and slowing them down would buy staleness
+     * for no saving.
+     */
     public void tickPlayers() {
         long now = System.currentTimeMillis();
-        if ((players.isEmpty() || now - lastPlayerFetchMs >= PLAYER_REFRESH_MS)
+        long interval = TownyMapMod.isWorldMapOpen() ? PLAYER_REFRESH_MS : PLAYER_REFRESH_IDLE_MS;
+        if ((players.isEmpty() || now - lastPlayerFetchMs >= interval)
                 && playerFetchRunning.compareAndSet(false, true)) {
             lastPlayerFetchMs = now;
             fetchExecutor.execute(this::fetchPlayers);

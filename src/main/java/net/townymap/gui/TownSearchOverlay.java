@@ -47,6 +47,13 @@ public final class TownSearchOverlay {
     private static final int ROW_HEIGHT = 20;
     private static final int MAX_RESULTS = 7;
     private static final int MAX_PER_TYPE = 3;
+    /** How wide a view a player jump frames, in blocks. They have no outline to fit, but arriving at
+     *  whole-map zoom is no more useful for a player than for a town. */
+    private static final int PLAYER_FRAME_BLOCKS = 512;
+    /** A nation wider than this is framed on its capital instead of in full -- fitting a box that size
+     *  just pins the map at minimum zoom, which is exactly what the fit exists to avoid. Every member
+     *  claim still flashes, so the spread is visible either way. */
+    private static final int NATION_FRAME_LIMIT = 6_000;
     private static final int MAX_INFO_LINES = 11;
     private static final int BG = 0xD8101010;
     private static final int BORDER = 0xFF333333;
@@ -685,7 +692,7 @@ public final class TownSearchOverlay {
             String lowerName = town.name().toLowerCase(Locale.ROOT);
             if (lowerName.contains(needle)) {
                 townMatches.add(new Result("Town: " + town.name(),
-                        new MapJumpTarget(town.name(), town.centerX(), town.centerZ()),
+                        MapJumpTarget.ofTown(town),
                         score(town.name(), needle), "town", town.name()));
             }
         }
@@ -728,7 +735,7 @@ public final class TownSearchOverlay {
             if (lowerName.contains(needle)
                     && !apiPlayerNames.contains(lowerName)) {
                 playerMatches.add(new Result("Player: " + player.name() + " (Online)",
-                        new MapJumpTarget(player.name(), player.x(), player.z()),
+                        MapJumpTarget.ofPoint(player.name(), player.x(), player.z(), PLAYER_FRAME_BLOCKS),
                         score(player.name(), needle), "player", player.name()));
             }
         }
@@ -750,7 +757,7 @@ public final class TownSearchOverlay {
             if (markerIndex.containsKey(lowerName)) continue;
             if (playerDetailNames.contains(lowerName)) continue;
             playerMatches.add(new Result("Player: " + history.name() + " (Last seen)",
-                    new MapJumpTarget(history.name(), history.x(), history.z()),
+                    MapJumpTarget.ofPoint(history.name(), history.x(), history.z(), PLAYER_FRAME_BLOCKS),
                     score(history.name(), needle), "player", history.name()));
         }
         String exact = exactPlayerQuery();
@@ -820,31 +827,58 @@ public final class TownSearchOverlay {
     private static MapJumpTarget playerTarget(String name, PlayerMarker marker,
                                               EarthMcPlayerData details, PlayerHistoryEntry history,
                                               Map<String, TownData> townIndex) {
-        if (marker != null) return new MapJumpTarget(name, marker.x(), marker.z());
-        if (history != null) return new MapJumpTarget(name, history.x(), history.z());
+        // A live position is where they ARE; frame it tightly rather than framing their home town.
+        if (marker != null) return MapJumpTarget.ofPoint(name, marker.x(), marker.z(), PLAYER_FRAME_BLOCKS);
+        if (history != null) return MapJumpTarget.ofPoint(name, history.x(), history.z(), PLAYER_FRAME_BLOCKS);
+        // Offline and unseen: their town is the only place worth going, so frame and flash that instead.
         if (details != null && !details.townName().isBlank()) {
             TownData town = townIndex.get(details.townName().toLowerCase(Locale.ROOT));
             if (town != null) {
-                return new MapJumpTarget(name, town.centerX(), town.centerZ());
+                return MapJumpTarget.ofTown(name, town);
             }
         }
         return null;
     }
 
     private static MapJumpTarget nationTarget(String name, EarthMcNationData details, Map<String, TownData> townIndex) {
-        if (details == null) return null;
-        if (!details.capitalName().isBlank()) {
-            TownData town = townIndex.get(details.capitalName().toLowerCase(Locale.ROOT));
-            if (town != null) {
-                return new MapJumpTarget(name, town.centerX(), town.centerZ());
-            }
+        TownData capital = details != null && !details.capitalName().isBlank()
+                ? townIndex.get(details.capitalName().toLowerCase(Locale.ROOT))
+                : null;
+        return nationTarget(name, details, capital, nationTowns(name, townIndex.values()));
+    }
+
+    /**
+     * Where a nation jump goes. A nation that fits is framed whole -- that is what you asked to see --
+     * and a sprawling one lands on its capital rather than zooming out to contain an outpost on the far
+     * side of the map. Either way every member claim is flashed, so the nation's real spread still shows.
+     */
+    private static MapJumpTarget nationTarget(String name, EarthMcNationData details,
+                                              TownData capital, List<TownData> members) {
+        MapJumpTarget whole = MapJumpTarget.ofTowns(name, members, null);
+        if (whole != null && Math.max(whole.spanX(), whole.spanZ()) <= NATION_FRAME_LIMIT) return whole;
+        List<String> memberNames = new ArrayList<>(members.size());
+        for (TownData t : members) memberNames.add(t.name());
+        if (capital != null) {
+            MapJumpTarget onCapital = MapJumpTarget.ofTown(name, capital);
+            return memberNames.isEmpty() ? onCapital : onCapital.withHighlights(memberNames);
         }
         // Only on Earth: the API spawn is an Earth coordinate, so jumping to it while viewing the Moon
         // would land somewhere unrelated rather than at the nation's outpost.
-        if (details.hasSpawn() && TownyMapMod.viewingEarth()) {
+        if (details != null && details.hasSpawn() && TownyMapMod.viewingEarth()) {
             return new MapJumpTarget(name, details.spawnX(), details.spawnZ());
         }
         return null;
+    }
+
+    /** Every claim the map holds for a nation, read from the squaremap tooltips the overlay already has. */
+    private static List<TownData> nationTowns(String nationName, java.util.Collection<TownData> towns) {
+        if (nationName == null || nationName.isBlank()) return List.of();
+        List<TownData> out = new ArrayList<>();
+        for (TownData town : towns) {
+            String nation = TownyMapMod.townNationOf(town.key());
+            if (nation != null && nation.equalsIgnoreCase(nationName)) out.add(town);
+        }
+        return out;
     }
 
     private static String capitalLabel(EarthMcNationData details) {
@@ -1509,16 +1543,10 @@ public final class TownSearchOverlay {
     private static MapJumpTarget favoriteTarget(FavEntry fav, List<TownData> towns) {
         if ("nation".equals(fav.type())) {
             EarthMcNationData nd = TownyMapMod.nationDetails(fav.name());
-            if (nd != null && !nd.capitalName().isBlank()) {
-                TownData capital = townByName(towns, nd.capitalName());
-                if (capital != null) {
-                    return new MapJumpTarget(fav.name(), capital.centerX(), capital.centerZ());
-                }
-            }
-            if (nd != null && nd.hasSpawn() && TownyMapMod.viewingEarth()) {
-                return new MapJumpTarget(fav.name(), nd.spawnX(), nd.spawnZ());
-            }
-            return null;
+            TownData capital = nd != null && !nd.capitalName().isBlank()
+                    ? townByName(towns, nd.capitalName())
+                    : null;
+            return nationTarget(fav.name(), nd, capital, nationTowns(fav.name(), towns));
         }
         if ("player".equals(fav.type())) {
             return TownyMapMod.playerJumpTarget(fav.name());
@@ -1785,7 +1813,7 @@ public final class TownSearchOverlay {
             String label = "Town: " + town.name() + (detail.isEmpty() ? "" : "  (" + detail + ")");
             matched.add(key);
             hits.add(new Hit(new Result(label,
-                    new MapJumpTarget(town.name(), town.centerX(), town.centerZ()),
+                    MapJumpTarget.ofTown(town),
                     0, "town", town.name()),
                     !f.chunks().isEmpty() ? chunks : Math.max(residents, 0)));
         }
@@ -1834,7 +1862,7 @@ public final class TownSearchOverlay {
         }
 
         public static ClickResult jump(TownData town) {
-            return new ClickResult(true, new MapJumpTarget(town.name(), town.centerX(), town.centerZ()));
+            return new ClickResult(true, MapJumpTarget.ofTown(town));
         }
 
         public static ClickResult jump(MapJumpTarget target) {

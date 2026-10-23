@@ -283,6 +283,30 @@ public class TownyMapMod implements ClientModInitializer {
         invalidateTownRenderCaches();
     }
 
+    /**
+     * Whether anything on screen is actually using squaremap's player feed.
+     *
+     * <p>It is polled from the minimap render path regardless of what is switched on, so someone who
+     * turned the dots off was still downloading the feed every few seconds for nothing. The feed also
+     * backs the nearby-players line and the last-seen ghosts, and the ghosts are drawn inside the same
+     * dot toggles, so the two checks below cover every consumer.
+     */
+    public static boolean needsPlayerFeed() {
+        if (config == null) return false;
+        if (config.infoDisplayNearbyPlayersEnabled) return true;
+        return config.playersEnabled && (config.minimapPlayersEnabled || isWorldMapOpen());
+    }
+
+    /**
+     * Whether the player feed must stay at its normal rate even while idle.
+     *
+     * <p>The wilderness alert exists to tell someone standing at their base that a player is coming.
+     * Idling is the state it is designed for, so it is the one consumer that must not be slowed down.
+     */
+    public static boolean wantsLivePlayerFeed() {
+        return config != null && config.minimapNationAlertEnabled;
+    }
+
     /** The player's own town, from whichever source already knows it. */
     private static String selfTownName() {
         Minecraft client = Minecraft.getInstance();
@@ -595,6 +619,7 @@ public class TownyMapMod implements ClientModInitializer {
         // cycle, so nothing is normally left behind. The full rebuild is the recovery for a cache that
         // went bad, which nothing else would ever notice -- so rather than leaving it to a setting
         // nobody turns on, a refresh is promoted to one whenever it has been long enough.
+        noteActivity();   // asking for a refresh is the clearest possible sign someone is there
         boolean full = config.refreshEntireMap
                 || System.currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS;
         // Standing in a claim, pull that town live -- the whole point is to beat squaremap's own
@@ -2184,6 +2209,48 @@ public class TownyMapMod implements ClientModInitializer {
      * indistinguishable from the mod failing to load, which is how it tends to get reported. Said once
      * per address, naming the address so it can be passed on, and the setting that turns it off.
      */
+    // ── Idle backoff ─────────────────────────────────────────────────────────
+
+    private static volatile long lastActivityMs = System.currentTimeMillis();
+    private static double lastActivityX = Double.NaN;
+    private static double lastActivityZ = Double.NaN;
+
+    /** Movement under this in a tick is standing still -- drift, mob knockback, a boat bobbing. */
+    private static final double ACTIVITY_MOVE_BLOCKS = 1.0;
+
+    /** How long since the player last moved or looked at a map. */
+    public static long idleMillis() {
+        return System.currentTimeMillis() - lastActivityMs;
+    }
+
+    /** Marks the session active, so the feeds go back to their normal rate at once. */
+    public static void noteActivity() {
+        lastActivityMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Watches for the player actually doing something.
+     *
+     * <p>A client left running overnight polls exactly as hard as one being played, which is most of
+     * what a 24/7 install costs -- and it is the case that needs the data least: nothing is moving,
+     * no map is open, nobody is looking. Moving or opening a map counts as activity; standing still
+     * does not, and the feeds back off until something changes.
+     */
+    private static void tickActivity() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null) { noteActivity(); return; }
+        if (isWorldMapOpen()) { noteActivity(); return; }
+        double x = client.player.getX();
+        double z = client.player.getZ();
+        if (Double.isNaN(lastActivityX)
+                || Math.abs(x - lastActivityX) > ACTIVITY_MOVE_BLOCKS
+                || Math.abs(z - lastActivityZ) > ACTIVITY_MOVE_BLOCKS) {
+            lastActivityX = x;
+            lastActivityZ = z;
+            noteActivity();
+        }
+    }
+
     private static void tickServerGateNotice() {
         if (config == null || !config.earthmcOnly || isAccessBlocked()) return;
         Minecraft client = Minecraft.getInstance();
@@ -2459,6 +2526,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
         tickPlayerDimensionChange();
         tickWorldMapInjectHealth();
+        tickActivity();
         tickServerGateNotice();
         tickWorldMapOpenState();
         tickXaeroDimensionSync();

@@ -52,6 +52,28 @@ public class SquaremapApiClient {
     private static final long PLAYER_REFRESH_MS = 1_000L;
     /** Cadence with only the minimap up -- see {@link #tickPlayers()}. */
     private static final long PLAYER_REFRESH_IDLE_MS = 3_000L;
+
+    /** Standing still and looking at nothing for this long starts the backoff. */
+    private static final long IDLE_AFTER_MS = 120_000L;          // 2 minutes
+    /** And this long moves to the slowest rate. */
+    private static final long LONG_IDLE_AFTER_MS = 600_000L;     // 10 minutes
+    private static final int IDLE_FACTOR = 5;
+    private static final int LONG_IDLE_FACTOR = 15;
+
+    /**
+     * Stretches a poll interval when nobody is doing anything.
+     *
+     * <p>A client left running overnight asks for claims and players exactly as often as one being
+     * played, and that is most of what a 24/7 install costs. Standing still with no map open is also
+     * precisely when the data matters least, so the longer that goes on the slower both feeds get.
+     * Any movement or opening a map resets it, so coming back is immediate rather than waiting out
+     * whatever interval was in force.
+     */
+    private static long idleScaled(long base) {
+        long idle = TownyMapMod.idleMillis();
+        if (idle < IDLE_AFTER_MS) return base;
+        return base * (idle < LONG_IDLE_AFTER_MS ? IDLE_FACTOR : LONG_IDLE_FACTOR);
+    }
     private static final long PLAYER_HISTORY_SAVE_DELAY_MS = 2_000L;
     private static final Pattern BOLD_TEXT =
             Pattern.compile("(?is)<b[^>]*>(.*?)</b>");
@@ -309,7 +331,7 @@ public class SquaremapApiClient {
                 || townsByWorld.getOrDefault(TownyMapMod.playerWorldResolved(), List.of()).isEmpty();
         if (!missing && now - lastMarkerTickCheckMs < 1_000L) return;
         lastMarkerTickCheckMs = now;
-        if ((missing || now - lastMarkerFetchMs >= refreshMs)
+        if ((missing || now - lastMarkerFetchMs >= idleScaled(refreshMs))
                 && markerFetchRunning.compareAndSet(false, true)) {
             lastMarkerFetchMs = now;
             fetchExecutor.execute(this::fetchMarkers);
@@ -392,7 +414,13 @@ public class SquaremapApiClient {
      */
     public void tickPlayers() {
         long now = System.currentTimeMillis();
-        long interval = TownyMapMod.isWorldMapOpen() ? PLAYER_REFRESH_MS : PLAYER_REFRESH_IDLE_MS;
+        // Nothing draws the dots, the ghosts or the nearby list: there is no one to show it to.
+        if (!TownyMapMod.needsPlayerFeed()) return;
+        long base = TownyMapMod.isWorldMapOpen() ? PLAYER_REFRESH_MS : PLAYER_REFRESH_IDLE_MS;
+        // Standing still with the wilderness alert on is the one case where being idle is the whole
+        // point: someone parked at their base wants to hear about an approaching player promptly, and
+        // a backed-off feed would make the warning late exactly when it matters. Claims still back off.
+        long interval = TownyMapMod.wantsLivePlayerFeed() ? base : idleScaled(base);
         if ((players.isEmpty() || now - lastPlayerFetchMs >= interval)
                 && playerFetchRunning.compareAndSet(false, true)) {
             lastPlayerFetchMs = now;

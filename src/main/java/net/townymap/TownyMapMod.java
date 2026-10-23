@@ -1317,9 +1317,34 @@ public class TownyMapMod implements ClientModInitializer {
                 renderer.renderNationJoinRange(ctx, rangeNation, nd, cameraX, cameraZ, scale, screenW, screenH);
             }
         }
-        if (!config.playersEnabled) return;   // this branch gates the player layer here, not inside it
-        if (composingScreenshot() && !screenshotWantsPlayers()) return;   // a map picture, not a who's-online
-        renderer.renderPlayersLayer(ctx, cameraX, cameraZ, scale, screenW, screenH, playerDetailsCache);
+        // this branch gates the player layer here, not inside it
+        if (config.playersEnabled
+                // a map picture, not a who's-online
+                && !(composingScreenshot() && !screenshotWantsPlayers())) {
+            renderer.renderPlayersLayer(ctx, cameraX, cameraZ, scale, screenW, screenH, playerDetailsCache);
+        }
+        // Last, so the flash lands over the claim tiles and the dots alike. A transient "look here" marker
+        // has no business in a shared screenshot, so it sits out the clean capture.
+        if (!composingScreenshot()) {
+            net.townymap.render.SearchFlash.render(ctx, cameraX, cameraZ, scale, screenW, screenH);
+        }
+    }
+
+    /**
+     * Arms the post-jump flash for a search result. Town geometry is snapshotted here rather than looked
+     * up per frame: the claim list is replaced wholesale on every refresh, and a flash that re-resolved
+     * names would blink out halfway through.
+     */
+    public static void flashSearchTarget(net.townymap.model.MapJumpTarget target) {
+        if (target == null || config == null || !config.searchFlash) return;
+        net.townymap.render.SearchFlash.arm(target.highlightTowns(), currentTowns());
+        if (net.townymap.render.SearchFlash.active()) return;
+        // Nothing resolved to a claim -- a player's live position, or a town the map hasn't drawn. Ring
+        // the spot itself so the jump still points somewhere rather than silently doing nothing.
+        if (target.hasExtent()) {
+            net.townymap.render.SearchFlash.armPoint(target.x(), target.z(),
+                    Math.max(target.spanX(), target.spanZ()));
+        }
     }
 
     /**

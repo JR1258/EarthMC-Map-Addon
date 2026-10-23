@@ -640,7 +640,99 @@ public abstract class MixinGuiMap {
         double dimScale = TownyMapMod.worldMapCoordinateScale();
         cameraX = target.x() / dimScale;
         cameraZ = target.z() / dimScale;
+        zoomToFit(target, dimScale);
+        TownyMapMod.flashSearchTarget(target);
     }
+
+    /**
+     * Picks a zoom that frames the target's claim with room to spare.
+     *
+     * <p>Centring alone left the result at whatever zoom the map happened to be at, so searching a town
+     * from full zoom-out landed you on a claim three pixels wide. The fit uses a deliberately small share
+     * of the screen so you get the outline AND its surroundings, and it is clamped at the top end so a
+     * one-chunk town doesn't slam the map to maximum magnification.
+     */
+    private void zoomToFit(MapJumpTarget target, double dimScale) {
+        if (target == null || !target.hasExtent() || dimScale <= 0) return;
+        if (TownyMapMod.getConfig() == null || !TownyMapMod.getConfig().searchZoomToFit) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.getWindow() == null) return;
+        int w = mc.getWindow().getGuiScaledWidth();
+        int h = mc.getWindow().getGuiScaledHeight();
+        // Only part of the screen is usable: the search panel owns one side and the result list the other,
+        // and "plus more" means the claim shouldn't reach the edges either way.
+        double availW = Math.max(40.0, w * USABLE_SCREEN_FRACTION);
+        double availH = Math.max(40.0, h * USABLE_SCREEN_FRACTION);
+        // Padding in blocks, so a small claim still arrives with a meaningful ring of land around it.
+        double spanX = (target.spanX() + FIT_PADDING_BLOCKS) / dimScale;
+        double spanZ = (target.spanZ() + FIT_PADDING_BLOCKS) / dimScale;
+        if (spanX <= 0 || spanZ <= 0) return;
+        double fit = Math.min(availW / spanX, availH / spanZ);
+        if (!Double.isFinite(fit) || fit <= 0) return;
+        // No floor of our own: Xaero re-clamps destScale every frame, including the looser World Map
+        // Overview floor, so asking for more zoom-out than it allows simply lands on its limit.
+        applyZoomTarget(Math.min(MAX_FIT_SCALE, fit));
+    }
+
+    /**
+     * Writes Xaero's zoom target and lets its own 100ms ease carry the map there.
+     *
+     * <p>Reflective, not {@code @Shadow}, on purpose. A shadowed field that Xaero renames fails the
+     * whole mixin at load time -- and this mixin carries every world-map overlay the mod draws, so one
+     * rename would take the entire addon off the map rather than just the zoom. Xaero has already moved
+     * zoom internals once (the zoom-out floor went from {@code changeZoom} to {@code applyZoomLimits} in
+     * 1.42.0). This degrades to "the jump centres but doesn't zoom" instead.
+     */
+    private void applyZoomTarget(double target) {
+        try {
+            Class<?> self = getClass();
+            if (townymap$destScaleField == null) {
+                townymap$destScaleField = townymap$findField(self, "destScale");
+            }
+            if (townymap$destScaleField == null) {
+                logOnce(ZOOM_FIELD_ERROR_LOGGED, "Xaero's world-map zoom target field is gone; "
+                        + "search jumps will centre without zooming", null);
+                return;
+            }
+            townymap$destScaleField.setDouble(null, target);   // static on Xaero's side
+            // Xaero treats any zoom that isn't method 2 (its own zoom buttons) as "zoom towards the
+            // cursor" and drags the camera that way on every frame the scale grows -- which pulled a
+            // centred jump straight back off the thing it had just centred on.
+            if (townymap$lastZoomMethodField == null) {
+                townymap$lastZoomMethodField = townymap$findField(self, "lastZoomMethod");
+            }
+            if (townymap$lastZoomMethodField != null) townymap$lastZoomMethodField.setInt(this, 2);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            logOnce(ZOOM_FIELD_ERROR_LOGGED, "Failed to set Xaero's world-map zoom for a search jump", e);
+        }
+    }
+
+    /** Looks a field up by name anywhere in the hierarchy, so no runtime class name is hardcoded. */
+    private static java.lang.reflect.Field townymap$findField(Class<?> from, String name) {
+        for (Class<?> c = from; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException | RuntimeException ignored) {
+                // Keep walking up: Xaero's GuiMap extends its own screen base.
+            }
+        }
+        return null;
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private static volatile java.lang.reflect.Field townymap$destScaleField;
+    @org.spongepowered.asm.mixin.Unique
+    private static volatile java.lang.reflect.Field townymap$lastZoomMethodField;
+    private static final AtomicBoolean ZOOM_FIELD_ERROR_LOGGED = new AtomicBoolean(false);
+
+    /** Share of each screen axis a framed claim is allowed to fill. */
+    private static final double USABLE_SCREEN_FRACTION = 0.6;
+    /** Blocks of breathing room added around a framed claim before the zoom is computed. */
+    private static final double FIT_PADDING_BLOCKS = 128.0;
+    /** Zoom-in ceiling for a fit, in GUI pixels per block. Beyond this the map is all claim and no context. */
+    private static final double MAX_FIT_SCALE = 1.5;
 
     private void handleJumpOrRoute(MapJumpTarget target) {
         if (target == null) return;

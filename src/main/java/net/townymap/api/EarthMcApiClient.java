@@ -183,6 +183,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
+        template(body, "name", "outlaws", "trusted");
 
         String json = null;
         for (int attempt = 0; attempt < 3 && json == null; attempt++) {
@@ -206,6 +207,24 @@ public class EarthMcApiClient {
     }
 
     /** Adds one town's roster to the tally. Entries may be plain strings or {name, uuid} objects. */
+    /**
+     * Restricts the response to the fields the caller actually parses.
+     *
+     * <p>The API returns the whole entity otherwise, and most of it is thrown away: for towns that is
+     * the full claim list, every resident, trusted and outlaw name, the ranks, warps and bank history.
+     * A hundred towns is 82 KB gzipped whole against 2 KB for the three fields the rankings read.
+     *
+     * <p>Two things to know. A field name the API does not recognise is ignored rather than rejected,
+     * so a rename degrades to a missing value instead of a failed request. And the value must be
+     * {@code true}: passing a nested object to narrow a field drops that field from the response
+     * entirely, with no error.
+     */
+    private static void template(JsonObject body, String... fields) {
+        JsonObject tpl = new JsonObject();
+        for (String f : fields) tpl.addProperty(f, true);
+        body.add("template", tpl);
+    }
+
     private static void tally(JsonObject town, String field, int slot, java.util.Map<String, int[]> out) {
         JsonElement el = town.get(field);
         if (el == null || !el.isJsonArray()) return;
@@ -255,6 +274,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
+        template(body, "name", "stats", "timestamps");
         String json = null;
         for (int attempt = 0; attempt < 5 && json == null; attempt++) {
             if (attempt > 0) {
@@ -277,8 +297,15 @@ public class EarthMcApiClient {
                 JsonObject st = t.getAsJsonObject("stats");
                 if (st.has("balance") && st.get("balance").isJsonPrimitive()) bal = st.get("balance").getAsDouble();
             }
+            // stats.numOutlaws is the same number as the array length (checked across a full batch) and
+            // comes free with stats, where the array itself is ~5 KB per hundred towns.
             int outlaws = 0;
-            if (t.has("outlaws") && t.get("outlaws").isJsonArray()) outlaws = t.getAsJsonArray("outlaws").size();
+            if (t.has("stats") && t.get("stats").isJsonObject()) {
+                JsonObject st2 = t.getAsJsonObject("stats");
+                if (st2.has("numOutlaws") && st2.get("numOutlaws").isJsonPrimitive()) {
+                    outlaws = st2.get("numOutlaws").getAsInt();
+                }
+            }
             long founded = 0;
             if (t.has("timestamps") && t.get("timestamps").isJsonObject()) {
                 founded = ts(t.getAsJsonObject("timestamps"), "registered");
@@ -293,6 +320,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
+        template(body, "name", "board", "discord", "mayor", "nation", "stats", "status", "timestamps");
 
         String json = null;
         for (int attempt = 0; attempt < 3 && json == null; attempt++) {
@@ -373,6 +401,7 @@ public class EarthMcApiClient {
                 JsonArray query = new JsonArray();
                 query.add(playerName);
                 body.add("query", query);
+                template(body, "name", "uuid", "formattedName", "town", "nation", "stats", "status", "timestamps");
 
                 String json = post(BASE + "/players", body.toString());
                 if (json == null) return null;
@@ -421,6 +450,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
+        template(body, "name", "uuid", "formattedName", "town", "nation", "stats", "status", "timestamps");
 
         // A whole-roster sweep is ~600 batches, so a batch that gives up loses 100 players silently.
         // 120ms/240ms was never going to outlast a rate limiter: five attempts with exponential backoff
@@ -464,6 +494,7 @@ public class EarthMcApiClient {
                 JsonArray query = new JsonArray();
                 query.add(nationName);
                 body.add("query", query);
+                template(body, "name", "uuid", "board", "discord", "coordinates", "stats", "status", "timestamps");
 
                 String json = post(BASE + "/nations", body.toString());
                 if (json == null) return null;
@@ -507,6 +538,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
+        template(body, "name", "uuid", "board", "discord", "coordinates", "stats", "status", "timestamps");
 
         String json = null;
         for (int attempt = 0; attempt < 3 && json == null; attempt++) {
@@ -636,6 +668,7 @@ public class EarthMcApiClient {
                 JsonArray q = new JsonArray();
                 q.add(nationName);
                 body.add("query", q);
+                template(body, "name", "stats", "residents");
                 String json = postGated(BASE + "/nations", body.toString());
                 if (json == null) return NationResidentStats.NONE;
                 JsonArray arr = JsonParser.parseString(json).getAsJsonArray();
@@ -695,6 +728,7 @@ public class EarthMcApiClient {
                 JsonArray q = new JsonArray();
                 q.add(townName);
                 body.add("query", q);
+                template(body, "name", "coordinates");
                 String json = postGated(BASE + "/towns", body.toString());
                 if (json == null) return null;
                 JsonArray arr = JsonParser.parseString(json).getAsJsonArray();
@@ -728,6 +762,7 @@ public class EarthMcApiClient {
                 JsonArray q = new JsonArray();
                 q.add(townName);
                 body.add("query", q);
+                template(body, "name", "residents");
                 String json = postGated(BASE + "/towns", body.toString());
                 if (json == null) return -1;
                 JsonArray arr = JsonParser.parseString(json).getAsJsonArray();
@@ -754,6 +789,7 @@ public class EarthMcApiClient {
                 JsonArray q = new JsonArray();
                 q.add(townName);
                 body.add("query", q);
+                template(body, "name", "stats", "residents");
                 String json = postGated(BASE + "/towns", body.toString());
                 if (json == null) return TownOverclaimProjection.NONE;
                 JsonArray arr = JsonParser.parseString(json).getAsJsonArray();

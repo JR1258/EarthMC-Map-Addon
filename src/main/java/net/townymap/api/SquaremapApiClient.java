@@ -134,6 +134,50 @@ public class SquaremapApiClient {
     // screen" -- a run of failures keeps bumping it while the claims go stale. These two track the
     // outcome instead: the last time claims actually landed, and whether the newest attempt failed.
     private volatile long lastMarkerSuccessMs = 0;
+    /** Server-stated minimum seconds between fetches, per URL -- see {@link #cacheFloorMs(String)}. */
+    private final Map<String, Long> maxAgeMs = new ConcurrentHashMap<>();
+
+    private static final java.util.regex.Pattern MAX_AGE =
+            java.util.regex.Pattern.compile("max-age\\s*=\\s*(\\d+)", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Remembers how long the server said this document stays fresh.
+     *
+     * <p>squaremap publishes its intent on every response -- markers.json says {@code max-age=120},
+     * players.json says {@code max-age=1} -- and we were polling markers every 60 seconds, twice as
+     * often as asked. Those extra polls come back 304 so they cost little, but they are still requests
+     * nobody wanted, and reading the header means that if EarthMC ever raises it to shed load we slow
+     * down on our own instead of waiting for a mod update.
+     */
+    private void noteCachePolicy(String url, HttpResponse<byte[]> resp) {
+        String cc = resp.headers().firstValue("Cache-Control").orElse(null);
+        if (cc == null) return;
+        String lower = cc.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("no-store") || lower.contains("no-cache")) {
+            maxAgeMs.remove(url);
+            return;
+        }
+        java.util.regex.Matcher m = MAX_AGE.matcher(lower);
+        if (m.find()) {
+            try {
+                maxAgeMs.put(url, Long.parseLong(m.group(1)) * 1000L);
+            } catch (NumberFormatException ignored) {
+                // Unparseable: leave whatever we had rather than guessing.
+            }
+        }
+    }
+
+    /**
+     * The server's own minimum interval for this document, or 0 if it has not said.
+     *
+     * <p>Only ever used as a floor. Our intervals already exceed it in most states, and a server that
+     * wants to be asked more often is not a reason for us to oblige.
+     */
+    private long cacheFloorMs(String url) {
+        Long v = maxAgeMs.get(url);
+        return v == null ? 0L : v;
+    }
+
     /** Last ETag seen per URL, so we can ask the server to skip sending unchanged data. */
     private final Map<String, String> etags = new ConcurrentHashMap<>();
     /** Unique instance: get() returns this when the server said 304, so it is distinct from any body. */
@@ -331,7 +375,10 @@ public class SquaremapApiClient {
                 || townsByWorld.getOrDefault(TownyMapMod.playerWorldResolved(), List.of()).isEmpty();
         if (!missing && now - lastMarkerTickCheckMs < 1_000L) return;
         lastMarkerTickCheckMs = now;
-        if ((missing || now - lastMarkerFetchMs >= idleScaled(refreshMs))
+        long markerInterval = Math.max(idleScaled(refreshMs),
+                cacheFloorMs(TownyMapMod.getConfig() == null ? ""
+                        : TownyMapMod.getConfig().markersUrl(TownyMapMod.activeWorldKey())));
+        if ((missing || now - lastMarkerFetchMs >= markerInterval)
                 && markerFetchRunning.compareAndSet(false, true)) {
             lastMarkerFetchMs = now;
             fetchExecutor.execute(this::fetchMarkers);
@@ -421,6 +468,8 @@ public class SquaremapApiClient {
         // point: someone parked at their base wants to hear about an approaching player promptly, and
         // a backed-off feed would make the warning late exactly when it matters. Claims still back off.
         long interval = TownyMapMod.wantsLivePlayerFeed() ? base : idleScaled(base);
+        interval = Math.max(interval, cacheFloorMs(
+                TownyMapMod.getConfig() == null ? "" : TownyMapMod.getConfig().playersUrl()));
         if ((players.isEmpty() || now - lastPlayerFetchMs >= interval)
                 && playerFetchRunning.compareAndSet(false, true)) {
             lastPlayerFetchMs = now;
@@ -651,6 +700,7 @@ public class SquaremapApiClient {
             if (prior != null) reqB.header("If-None-Match", prior);
             HttpRequest req = reqB.build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            noteCachePolicy(url, resp);
             if (resp.statusCode() == 304) return NOT_MODIFIED;
             if (resp.statusCode() == 200) {
                 resp.headers().firstValue("ETag").ifPresent(tag -> etags.put(url, tag));

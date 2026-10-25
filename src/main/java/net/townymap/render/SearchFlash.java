@@ -1,6 +1,5 @@
 package net.townymap.render;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.townymap.model.TownData;
 
 import java.util.Collection;
@@ -9,17 +8,18 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * The "here it is" flash that follows a search jump.
+ * The "here it is" flash that follows a search jump to a town.
  *
  * <p>Centring on a result put the right place under the crosshair and nothing more: on a map where every
  * neighbour is also an outlined polygon, the town you asked for looked exactly like the forty around it.
  *
- * <p>For a town, this class owns only the TIMING. {@link WorldMapRenderer} draws the border: the claim
- * moves onto its highlight layer for the duration, so the white line IS the town's border on the
- * renderer's own geometry, and {@link #tint()} blinks it by driving that layer's blit alpha -- which
- * costs no re-bake, so the blink is free however fast it runs.
+ * <p>This class draws nothing. It owns the timing, and {@link WorldMapRenderer} does the rest: the claim
+ * stays baked normally and the renderer's highlight layer carries a white copy of its border over the
+ * top, which {@link #tint()} blinks by driving that layer's blit alpha. Nothing is re-baked, so the
+ * blink is free, and the border alternates between white and the town's own colour.
  *
- * <p>A player has no claim to take over, so the one thing drawn here is a blinking mark on the spot.
+ * <p>Only claims flash. A player has no border to take over, and a marker invented for one was a second
+ * thing to look at next to the thing you were looking for -- the jump and its zoom are the answer there.
  */
 public final class SearchFlash {
 
@@ -35,11 +35,6 @@ public final class SearchFlash {
     /** Chrome: a near-white border. */
     private static final int CORE_RGB = 0xF2F6FF;
 
-    /** Where a point flash sits. Towns need no geometry here -- the renderer owns their border. */
-    private record Shape(int minX, int maxX, int minZ, int maxZ) {}
-
-    /** Point flashes only (a player). Empty for a town flash. */
-    private static volatile List<Shape> shapes = List.of();
     /** Lower-cased names of the claims whose border the renderer should take over. */
     private static volatile Set<String> townKeys = Set.of();
     private static volatile long startedMs = 0L;
@@ -69,21 +64,11 @@ public final class SearchFlash {
             clear();
             return;
         }
-        shapes = List.of();            // the renderer draws the borders; nothing to draw here
         townKeys = Set.copyOf(nextKeys);
         startedMs = System.currentTimeMillis();
     }
 
-    /** Arms the flash on a bare point -- a player, who has no claim of their own to take over. */
-    public static void armPoint(int x, int z, int span) {
-        int half = Math.max(8, span / 2);
-        shapes = List.of(new Shape(x - half, x + half, z - half, z + half));
-        townKeys = Set.of();
-        startedMs = System.currentTimeMillis();
-    }
-
     public static void clear() {
-        shapes = List.of();
         townKeys = Set.of();
         startedMs = 0L;
     }
@@ -97,21 +82,22 @@ public final class SearchFlash {
 
     /**
      * The claims whose border the renderer should draw in the flash colour, or empty when nothing is
-     * flashing. Read once per frame: the renderer re-bakes its outline tiles when this changes, which is
-     * what makes the swap a replacement rather than a second line on top.
+     * flashing. Read once per frame: the renderer rebuilds its highlight tiles when this changes, which
+     * is what puts the white border there and takes it away again. Also where an expired flash is let
+     * go of, since nothing else looks at it.
      */
     public static Set<String> activeTownKeys() {
-        return active() ? townKeys : Set.of();
+        if (startedMs != 0L && !active()) clear();
+        return townKeys;
     }
 
     /**
      * The colour the flashed border is drawn in, blinking through its ALPHA.
      *
-     * <p>Alpha is what makes this a blink rather than a pulse. The tile path applies this as a blit tint
-     * and a flashing claim's border is not on the main layer, so alpha 0 leaves the town showing its own
-     * fill with no border at all and full alpha puts a clean white border back. The direct path lands in
-     * the same place for free: it already skips the outline when the border colour is transparent, and it
-     * does so after drawing the fill.
+     * <p>Alpha is what makes this a blink rather than a pulse. The renderer applies this as a blit tint
+     * over the town's own border, so alpha 0 shows the border in its real colour and full alpha covers
+     * it in white. The direct path lands in the same place for free: it takes this colour only while the
+     * blink is on and falls through to the town's own colour off-beat.
      */
     public static int tint() {
         long started = startedMs;
@@ -120,55 +106,16 @@ public final class SearchFlash {
         if (age < 0) return 0xFF000000 | CORE_RGB;
         // Fade the blink out over the last stretch so the border comes back without a snap.
         double life = 1.0 - Math.max(0.0, (age - DURATION_MS * 0.6) / (DURATION_MS * 0.4));
-        double strength = blink(age) * Math.max(0.0, Math.min(1.0, life));
-        int alpha = (int) Math.round(255 * strength);
+        int alpha = (int) Math.round(255 * blink(age) * Math.max(0.0, Math.min(1.0, life)));
         return (Math.max(0, Math.min(255, alpha)) << 24) | CORE_RGB;
     }
 
-    /** 0 while the border is hidden, 1 at full strength, with short ramps between. */
+    /** 0 while the border shows its own colour, 1 at full white, with short ramps between. */
     private static double blink(long age) {
         double t = (age % BLINK_MS) / (double) BLINK_MS;
         if (t < BLINK_RAMP) return t / BLINK_RAMP;
         if (t < 0.5) return 1.0;
         if (t < 0.5 + BLINK_RAMP) return 1.0 - (t - 0.5) / BLINK_RAMP;
         return 0.0;
-    }
-
-    public static void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ,
-                              double blockScale, int sw, int sh) {
-        // A town flash draws nothing here, but this is still where an expired one is let go of.
-        if (startedMs != 0L && !active()) clear();
-
-        List<Shape> snapshot = shapes;
-        if (snapshot.isEmpty() || blockScale <= 0) return;
-
-        int argb = tint();
-        if ((argb >>> 24) < 6) return;   // mid-blink, or faded out
-        for (Shape shape : snapshot) {
-            drawPointMark(ctx, shape, argb, cameraX, cameraZ, blockScale, sw, sh);
-        }
-    }
-
-    /** A player's position: no claim for the renderer to take over, so mark the spot and blink that. */
-    private static void drawPointMark(GuiGraphicsExtractor ctx, Shape shape, int argb,
-                                      double cameraX, double cameraZ, double blockScale, int sw, int sh) {
-        double cx = (shape.minX() + shape.maxX()) / 2.0;
-        double cz = (shape.minZ() + shape.maxZ()) / 2.0;
-        double r = Math.max(shape.maxX() - cx, shape.maxZ() - cz) * 0.35;
-        box(ctx, cx - r, cz - r, cx + r, cz + r, argb, cameraX, cameraZ, blockScale, sw, sh);
-    }
-
-    /** An axis-aligned world-space rectangle outline, projected and drawn as four thin segments. */
-    private static void box(GuiGraphicsExtractor ctx, double wx1, double wz1, double wx2, double wz2,
-                            int argb, double cameraX, double cameraZ, double blockScale, int sw, int sh) {
-        double x1 = (wx1 - cameraX) * blockScale + sw / 2.0;
-        double y1 = (wz1 - cameraZ) * blockScale + sh / 2.0;
-        double x2 = (wx2 - cameraX) * blockScale + sw / 2.0;
-        double y2 = (wz2 - cameraZ) * blockScale + sh / 2.0;
-        if (x2 < 0 || x1 > sw || y2 < 0 || y1 > sh) return;
-        WorldMapRenderer.drawThinSegment(ctx, x1, y1, x2, y1, argb, sw, sh);
-        WorldMapRenderer.drawThinSegment(ctx, x1, y2, x2, y2, argb, sw, sh);
-        WorldMapRenderer.drawThinSegment(ctx, x1, y1, x1, y2, argb, sw, sh);
-        WorldMapRenderer.drawThinSegment(ctx, x2, y1, x2, y2, argb, sw, sh);
     }
 }

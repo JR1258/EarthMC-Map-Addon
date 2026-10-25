@@ -1,6 +1,5 @@
 package net.townymap.model;
 
-import java.util.Collection;
 import java.util.List;
 
 /**
@@ -47,27 +46,6 @@ public record MapJumpTarget(String label, int x, int z,
     public static MapJumpTarget ofTown(String label, TownData town) {
         return new MapJumpTarget(label, town.centerX(), town.centerZ(),
                 town.minX(), town.maxX(), town.minZ(), town.maxZ(), List.of(town.name()));
-    }
-
-    /**
-     * Frames every claim in a group -- a nation's member towns. Centres on the middle of their combined
-     * box rather than on the capital, so the whole nation is in view and not just its corner.
-     * Falls back to {@code fallback} when the group holds no towns we have geometry for.
-     */
-    public static MapJumpTarget ofTowns(String label, Collection<TownData> group, MapJumpTarget fallback) {
-        if (group == null || group.isEmpty()) return fallback;
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
-        List<String> names = new java.util.ArrayList<>(group.size());
-        for (TownData town : group) {
-            minX = Math.min(minX, town.minX());
-            maxX = Math.max(maxX, town.maxX());
-            minZ = Math.min(minZ, town.minZ());
-            maxZ = Math.max(maxZ, town.maxZ());
-            names.add(town.name());
-        }
-        return new MapJumpTarget(label, minX + (maxX - minX) / 2, minZ + (maxZ - minZ) / 2,
-                minX, maxX, minZ, maxZ, names);
     }
 
     /** Whether there is an area to fit, as opposed to a single point. */

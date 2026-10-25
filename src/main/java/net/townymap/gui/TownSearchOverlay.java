@@ -50,10 +50,6 @@ public final class TownSearchOverlay {
     /** How wide a view a player jump frames, in blocks. They have no outline to fit, but arriving at
      *  whole-map zoom is no more useful for a player than for a town. */
     private static final int PLAYER_FRAME_BLOCKS = 512;
-    /** A nation wider than this is framed on its capital instead of in full -- fitting a box that size
-     *  just pins the map at minimum zoom, which is exactly what the fit exists to avoid. Japan is 182
-     *  towns across 13,584 blocks, so this is the common case for the big ones, not an edge case. */
-    private static final int NATION_FRAME_LIMIT = 6_000;
     private static final int MAX_INFO_LINES = 11;
     private static final int BG = 0xD8101010;
     private static final int BORDER = 0xFF333333;
@@ -843,21 +839,19 @@ public final class TownSearchOverlay {
         TownData capital = details != null && !details.capitalName().isBlank()
                 ? townIndex.get(details.capitalName().toLowerCase(Locale.ROOT))
                 : null;
-        return nationTarget(name, details, capital, nationTowns(name, townIndex.values()));
+        return nationTarget(name, details, capital);
     }
 
     /**
-     * Where a nation jump goes.
+     * Where a nation jump goes: its capital, framed and flashed exactly as if you had searched that town.
      *
-     * <p>A nation that fits is framed whole and every member claim flashes -- that is what you asked to
-     * see, and at that zoom you can see all of it. A sprawling one lands on its capital instead, and
-     * flashes only the capital: framing it whole would pin the map at minimum zoom, and flashing all 182
-     * of Japan's towns while looking at one of them only means 181 white borders somewhere off-screen.
+     * <p>It used to frame the whole nation when it fitted and flash every member claim. On EarthMC that
+     * almost never applies -- Japan is 182 towns across 13,584 blocks, and a nation's extent is usually
+     * set by scattered outposts rather than by anything you would want in view -- so the common case was
+     * a size test that always failed, plus a scan of every town on the map to answer it. The capital is
+     * the one place a nation jump can reliably mean.
      */
-    private static MapJumpTarget nationTarget(String name, EarthMcNationData details,
-                                              TownData capital, List<TownData> members) {
-        MapJumpTarget whole = MapJumpTarget.ofTowns(name, members, null);
-        if (whole != null && Math.max(whole.spanX(), whole.spanZ()) <= NATION_FRAME_LIMIT) return whole;
+    private static MapJumpTarget nationTarget(String name, EarthMcNationData details, TownData capital) {
         if (capital != null) return MapJumpTarget.ofTown(name, capital);
         // Only on Earth: the API spawn is an Earth coordinate, so jumping to it while viewing the Moon
         // would land somewhere unrelated rather than at the nation's outpost.
@@ -865,17 +859,6 @@ public final class TownSearchOverlay {
             return new MapJumpTarget(name, details.spawnX(), details.spawnZ());
         }
         return null;
-    }
-
-    /** Every claim the map holds for a nation, read from the squaremap tooltips the overlay already has. */
-    private static List<TownData> nationTowns(String nationName, java.util.Collection<TownData> towns) {
-        if (nationName == null || nationName.isBlank()) return List.of();
-        List<TownData> out = new ArrayList<>();
-        for (TownData town : towns) {
-            String nation = TownyMapMod.townNationOf(town.key());
-            if (nation != null && nation.equalsIgnoreCase(nationName)) out.add(town);
-        }
-        return out;
     }
 
     private static String capitalLabel(EarthMcNationData details) {
@@ -1543,7 +1526,7 @@ public final class TownSearchOverlay {
             TownData capital = nd != null && !nd.capitalName().isBlank()
                     ? townByName(towns, nd.capitalName())
                     : null;
-            return nationTarget(fav.name(), nd, capital, nationTowns(fav.name(), towns));
+            return nationTarget(fav.name(), nd, capital);
         }
         if ("player".equals(fav.type())) {
             return TownyMapMod.playerJumpTarget(fav.name());

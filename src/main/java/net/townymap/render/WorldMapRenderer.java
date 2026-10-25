@@ -194,6 +194,14 @@ public class WorldMapRenderer {
     // animated status colour instead, so the highlight is a single flush line (no baked line under it).
     // statusVersion bumps when this set changes → tiles rebuild, exactly like favouritesVersion.
     private Set<String> statusHighlightKeys = Set.of();
+    /**
+     * Claims whose border is currently being drawn in the search-flash colour. They ride the SAME
+     * highlight layer as the map modes, which is what makes the flash a replacement: a town is baked
+     * into exactly one layer, so its own colour is gone for the duration instead of sitting under a
+     * second white line. Empty while a map mode is on -- moving a town onto that layer there would
+     * paint it in the mode's colour and claim it qualifies for the mode when it may not.
+     */
+    private Set<String> flashKeys = Set.of();
     private int statusVersion = 0;
     private int lastStatusMode = -1;
     private int lastStatusDetailsSize = -1;
@@ -480,6 +488,7 @@ public class WorldMapRenderer {
         double worldBottom = cameraZ + sh / 2.0 / blockScale;
 
         refreshStatusHighlightKeys(townDetails);
+        refreshFlashKeys();
 
         // ── Outline strategy: exactly squaremap's ────────────────────────────────
         // The smooth (DP + anti-aliased) tile path owns the outlines at every zoom where a chunk is small
@@ -505,8 +514,12 @@ public class WorldMapRenderer {
                                                sw, sh, worldLeft, worldRight, worldTop, worldBottom)) {
             // Highlight layer on top, tinted with the live (optionally animating) colour. Blitted after the
             // main layer so it sits above the outlines it is highlighting.
-            if (isHighlightMode()) {
-                renderTownOutlineTiles(ctx, statusTiles, 0xFF000000 | statusHighlightRgb(),
+            if (isHighlightMode() || !flashKeys.isEmpty()) {
+                // The tint is applied at blit time, so the flash's pulse costs no re-bake at all.
+                int tint = flashKeys.isEmpty()
+                        ? 0xFF000000 | statusHighlightRgb()
+                        : net.townymap.render.SearchFlash.tint();
+                renderTownOutlineTiles(ctx, statusTiles, tint,
                                        cameraX, cameraZ, blockScale, sw, sh,
                                        worldLeft, worldRight, worldTop, worldBottom);
             }
@@ -535,12 +548,16 @@ public class WorldMapRenderer {
             // town.key() is already lower-cased, so no per-town String allocation here.
             boolean favorite = haveFavorites && favoriteTownKeys.contains(town.key());
             boolean statusHighlighted = overlayOn && isStatusHighlighted(town, townDetails);
+            // Zoomed in past the tile path (or waiting on a re-bake), so there is no layer to swap --
+            // but the colour decision below is the same one, and overriding it here IS the replacement.
+            boolean flashing = flashKeys.contains(town.key());
             // One colour encodes everything → one outline pass (favourite > status > the town's own colour).
             // Use the SAME opacities as the baked tiles (SITE_*), not borderAlpha/fillAlpha. They used to
             // differ — stroke 220 vs 165, fill 35 vs 64 — so crossing the tile/direct zoom boundary made
             // towns visibly change brightness, most obvious on the bright gold favourites.
             // Favourites differ from other towns only in COLOUR, never in opacity.
-            int outlineColor = favorite ? ((strokeAlpha << 24) | 0xFFE066)
+            int outlineColor = flashing ? net.townymap.render.SearchFlash.tint()
+                    : favorite ? ((strokeAlpha << 24) | 0xFFE066)
                     : statusHighlighted ? (0xFF000000 | statusRgb)
                     : ((strokeAlpha << 24) | (town.data().rgbColor() & 0xFFFFFF));
             // Interior uses the town's FILL colour (nation fill), not the outline colour — except
@@ -567,6 +584,28 @@ public class WorldMapRenderer {
             // 4 (Meganations) and 5 (Alliances) are not single-colour highlights — they recolour the source.
             default -> false;
         };
+    }
+
+    /**
+     * Picks up the search flash and invalidates the outline bake when it starts or ends, so the claim
+     * actually moves between tile layers. Until the new tiles are ready the tile path reports "not
+     * handled" and the direct path draws instead, which applies the same colour override -- so the swap
+     * is seamless rather than showing the old colour until the bake catches up.
+     */
+    private void refreshFlashKeys() {
+        Set<String> next = isHighlightMode() ? Set.of() : net.townymap.render.SearchFlash.activeTownKeys();
+        if (next.equals(flashKeys)) return;
+        flashKeys = next;
+        statusVersion++;
+    }
+
+    /** Everything on the highlight layer: the map mode's towns, or the flashed claims. Never both. */
+    private Set<String> highlightLayerKeys() {
+        if (flashKeys.isEmpty()) return statusHighlightKeys;   // already immutable
+        if (statusHighlightKeys.isEmpty()) return flashKeys;
+        Set<String> union = new HashSet<>(statusHighlightKeys);
+        union.addAll(flashKeys);
+        return Set.copyOf(union);
     }
 
     /** The single-colour highlight modes (Public/Overclaim/Open). Modes 4/5 recolour the source instead. */
@@ -664,7 +703,10 @@ public class WorldMapRenderer {
         if (snapshot.allTowns().isEmpty()) return true;   // nothing to draw, but still "handled" (no direct)
         processOutlineTileUploads(layer);
         Set<String> favSnapshot = favoriteTownKeys.isEmpty() ? Set.of() : Set.copyOf(favoriteTownKeys);
-        Set<String> statusSnapshot = statusHighlightKeys;   // already immutable (Set.of() / Set.copyOf)
+        // The bake splits towns by "is this on the highlight layer", and the flash is one more reason to
+        // be. Union, not replacement: a map mode and a flash never coexist (see flashKeys), so at most one
+        // of the two is non-empty, and unioning keeps the split a single membership test either way.
+        Set<String> statusSnapshot = highlightLayerKeys();
 
         // Rasterise at PHYSICAL pixel density (like the browser's devicePixelRatio canvas): the zoom
         // bucket is chosen from blockScale × GUI scale, so ppb below is physical px per block and the

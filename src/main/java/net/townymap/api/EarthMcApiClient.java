@@ -494,7 +494,7 @@ public class EarthMcApiClient {
                 JsonArray query = new JsonArray();
                 query.add(nationName);
                 body.add("query", query);
-                template(body, "name", "uuid", "board", "discord", "coordinates", "stats", "status", "timestamps");
+                template(body, "name", "uuid", "board", "discord", "king", "capital", "coordinates", "stats", "status", "timestamps");
 
                 String json = post(BASE + "/nations", body.toString());
                 if (json == null) return null;
@@ -538,7 +538,7 @@ public class EarthMcApiClient {
         JsonArray q = new JsonArray();
         batch.forEach(q::add);
         body.add("query", q);
-        template(body, "name", "uuid", "board", "discord", "coordinates", "stats", "status", "timestamps");
+        template(body, "name", "uuid", "board", "discord", "king", "capital", "coordinates", "stats", "status", "timestamps");
 
         String json = null;
         for (int attempt = 0; attempt < 3 && json == null; attempt++) {

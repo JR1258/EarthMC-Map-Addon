@@ -70,11 +70,6 @@ public record MapJumpTarget(String label, int x, int z,
                 minX, maxX, minZ, maxZ, names);
     }
 
-    /** The same jump, flashing a different set of claims than the one it frames. */
-    public MapJumpTarget withHighlights(List<String> names) {
-        return new MapJumpTarget(label, x, z, minX, maxX, minZ, maxZ, names);
-    }
-
     /** Whether there is an area to fit, as opposed to a single point. */
     public boolean hasExtent() {
         return maxX > minX || maxZ > minZ;

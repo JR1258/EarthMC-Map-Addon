@@ -51,8 +51,8 @@ public final class TownSearchOverlay {
      *  whole-map zoom is no more useful for a player than for a town. */
     private static final int PLAYER_FRAME_BLOCKS = 512;
     /** A nation wider than this is framed on its capital instead of in full -- fitting a box that size
-     *  just pins the map at minimum zoom, which is exactly what the fit exists to avoid. Every member
-     *  claim still flashes, so the spread is visible either way. */
+     *  just pins the map at minimum zoom, which is exactly what the fit exists to avoid. Japan is 182
+     *  towns across 13,584 blocks, so this is the common case for the big ones, not an edge case. */
     private static final int NATION_FRAME_LIMIT = 6_000;
     private static final int MAX_INFO_LINES = 11;
     private static final int BG = 0xD8101010;
@@ -847,20 +847,18 @@ public final class TownSearchOverlay {
     }
 
     /**
-     * Where a nation jump goes. A nation that fits is framed whole -- that is what you asked to see --
-     * and a sprawling one lands on its capital rather than zooming out to contain an outpost on the far
-     * side of the map. Either way every member claim is flashed, so the nation's real spread still shows.
+     * Where a nation jump goes.
+     *
+     * <p>A nation that fits is framed whole and every member claim flashes -- that is what you asked to
+     * see, and at that zoom you can see all of it. A sprawling one lands on its capital instead, and
+     * flashes only the capital: framing it whole would pin the map at minimum zoom, and flashing all 182
+     * of Japan's towns while looking at one of them only means 181 white borders somewhere off-screen.
      */
     private static MapJumpTarget nationTarget(String name, EarthMcNationData details,
                                               TownData capital, List<TownData> members) {
         MapJumpTarget whole = MapJumpTarget.ofTowns(name, members, null);
         if (whole != null && Math.max(whole.spanX(), whole.spanZ()) <= NATION_FRAME_LIMIT) return whole;
-        List<String> memberNames = new ArrayList<>(members.size());
-        for (TownData t : members) memberNames.add(t.name());
-        if (capital != null) {
-            MapJumpTarget onCapital = MapJumpTarget.ofTown(name, capital);
-            return memberNames.isEmpty() ? onCapital : onCapital.withHighlights(memberNames);
-        }
+        if (capital != null) return MapJumpTarget.ofTown(name, capital);
         // Only on Earth: the API spawn is an Earth coordinate, so jumping to it while viewing the Moon
         // would land somewhere unrelated rather than at the nation's outpost.
         if (details != null && details.hasSpawn() && TownyMapMod.viewingEarth()) {

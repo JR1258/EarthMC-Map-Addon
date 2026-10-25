@@ -594,14 +594,8 @@ public class WorldMapRenderer {
         statusVersion++;
     }
 
-    /** Everything on the highlight layer: the map mode's towns, or the flashed claims. Never both. */
-    private Set<String> highlightLayerKeys() {
-        if (flashKeys.isEmpty()) return statusHighlightKeys;   // already immutable
-        if (statusHighlightKeys.isEmpty()) return flashKeys;
-        Set<String> union = new HashSet<>(statusHighlightKeys);
-        union.addAll(flashKeys);
-        return Set.copyOf(union);
-    }
+    /** Which towns the map mode highlights and which are flashing, snapshotted for one frame's bake. */
+    private record Highlights(Set<String> status, Set<String> flash) {}
 
     /** The single-colour highlight modes (Public/Overclaim/Open). Modes 4/5 recolour the source instead. */
     private boolean isHighlightMode() {
@@ -698,10 +692,10 @@ public class WorldMapRenderer {
         if (snapshot.allTowns().isEmpty()) return true;   // nothing to draw, but still "handled" (no direct)
         processOutlineTileUploads(layer);
         Set<String> favSnapshot = favoriteTownKeys.isEmpty() ? Set.of() : Set.copyOf(favoriteTownKeys);
-        // The bake splits towns by "is this on the highlight layer", and the flash is one more reason to
-        // be. Union, not replacement: a map mode and a flash never coexist (see flashKeys), so at most one
-        // of the two is non-empty, and unioning keeps the split a single membership test either way.
-        Set<String> statusSnapshot = highlightLayerKeys();
+        // Kept apart, not unioned: a map-mode town moves to the highlight layer whole, while a flashed
+        // claim is split across both -- interior on the main layer in its own colour, border on the
+        // highlight layer to be tinted. A union cannot express that difference.
+        Highlights highlightSets = new Highlights(statusHighlightKeys, flashKeys);
 
         // Rasterise at PHYSICAL pixel density (like the browser's devicePixelRatio canvas): the zoom
         // bucket is chosen from blockScale × GUI scale, so ppb below is physical px per block and the
@@ -728,7 +722,7 @@ public class WorldMapRenderer {
             if (now - layer.pendingSinceMs < OUTLINE_ZOOM_SETTLE_MS) {
                 drawCoarserFallback(ctx, layer, zoom, cameraX, cameraZ, blockScale, sw, sh,
                                     worldLeft, worldRight, worldTop, worldBottom,
-                                    density, snapshot, favSnapshot, statusSnapshot);
+                                    density, snapshot, favSnapshot, highlightSets);
                 return true;
             }
         }
@@ -743,7 +737,7 @@ public class WorldMapRenderer {
                 long key = outlineTileKey(zoom, tx, ty);
                 if (!layer.tiles.containsKey(key) && !layer.empty.contains(key)) {
                     requestOutlineTile(layer, key, zoom, tx, ty, tileWorldSize, ppb, density,
-                                       snapshot, favSnapshot, statusSnapshot);
+                                       snapshot, favSnapshot, highlightSets);
                     allReady = false;
                 }
             }
@@ -770,7 +764,7 @@ public class WorldMapRenderer {
         } else {
             drawCoarserFallback(ctx, layer, zoom, cameraX, cameraZ, blockScale, sw, sh,
                                 worldLeft, worldRight, worldTop, worldBottom,
-                                density, snapshot, favSnapshot, statusSnapshot);
+                                density, snapshot, favSnapshot, highlightSets);
         }
         if (allReady) layer.lastReadyZoom = zoom;
 
@@ -785,7 +779,7 @@ public class WorldMapRenderer {
                                      double blockScale, int sw, int sh, double worldLeft, double worldRight,
                                      double worldTop, double worldBottom, double density,
                                      TownRenderCache snapshot, Set<String> favSnapshot,
-                                     Set<String> statusSnapshot) {
+                                     Highlights highlightSets) {
         // Stand in with the last fully-ready level. (Picking the "nearest cached" level instead was tried
         // and reverted: which level is nearest changes as tiles bake and evict, so the stand-in hopped
         // between levels frame to frame and made every town flicker.)
@@ -796,7 +790,7 @@ public class WorldMapRenderer {
         }
         drewOverviewFloor(ctx, layer, cameraX, cameraZ, blockScale, sw, sh,
                           worldLeft, worldRight, worldTop, worldBottom,
-                          density, snapshot, favSnapshot, statusSnapshot);
+                          density, snapshot, favSnapshot, highlightSets);
     }
 
     /** Blits whatever is cached at {@code zoom}, scaled to the current view. Partial coverage is drawn
@@ -839,7 +833,7 @@ public class WorldMapRenderer {
                                    int sw, int sh, double worldLeft, double worldRight,
                                    double worldTop, double worldBottom, double density,
                                    TownRenderCache snapshot, Set<String> favSnapshot,
-                                   Set<String> statusSnapshot) {
+                                   Highlights highlightSets) {
         int ovZoom = overviewOutlineZoom();
         double ovPpb = outlineTilePixelsPerBlock(ovZoom);
         double ovTileWorld = OUTLINE_TILE_PIXELS / ovPpb;
@@ -855,7 +849,7 @@ public class WorldMapRenderer {
                     blitOutlineTile(ctx, layer, tex, tx, ty, ovTileWorld, cameraX, cameraZ, blockScale, sw, sh);
                 } else if (!layer.empty.contains(key)) {
                     requestOutlineTile(layer, key, ovZoom, tx, ty, ovTileWorld, ovPpb, density,
-                                       snapshot, favSnapshot, statusSnapshot);
+                                       snapshot, favSnapshot, highlightSets);
                 }
             }
         }
@@ -870,7 +864,7 @@ public class WorldMapRenderer {
 
     private void requestOutlineTile(TileLayer layer, long key, int zoom, int tx, int ty, double tileWorldSize, double ppb,
                                     double density, TownRenderCache snapshot, Set<String> favSnapshot,
-                                    Set<String> statusSnapshot) {
+                                    Highlights highlightSets) {
         if (layer.loading.size() >= MAX_OUTLINE_TILE_LOADS) return;
         if (!layer.loading.add(key)) return;
         // Stamp the versions this tile is being baked with, so a tile that finishes after the favourite or
@@ -879,7 +873,7 @@ public class WorldMapRenderer {
         int statVer = outlineTilesStatusVersion;
         outlineTileExecutor.execute(() -> {
             try {
-                NativeImage img = rasterizeOutlineTile(layer, zoom, tx, ty, tileWorldSize, ppb, density, snapshot, favSnapshot, statusSnapshot);
+                NativeImage img = rasterizeOutlineTile(layer, zoom, tx, ty, tileWorldSize, ppb, density, snapshot, favSnapshot, highlightSets);
                 if (img == null) layer.empty.add(key);
                 else layer.completed.add(new LoadedOutlineTile(key, snapshot, img, favVer, statVer));
             } catch (Exception e) {
@@ -892,7 +886,7 @@ public class WorldMapRenderer {
 
     private NativeImage rasterizeOutlineTile(TileLayer layer, int zoom, int tx, int ty, double tileWorldSize, double ppb,
                                              double density, TownRenderCache snapshot, Set<String> favSnapshot,
-                                             Set<String> statusSnapshot) {
+                                             Highlights highlightSets) {
         double tileWorldX = tx * tileWorldSize;
         double tileWorldZ = ty * tileWorldSize;
         double pad = tileWorldSize * 0.02;
@@ -961,8 +955,16 @@ public class WorldMapRenderer {
                 // Each layer bakes only its own towns, through the SAME rasteriser — so a highlighted
                 // town's line is pixel-identical to its neighbours', which stroking it live could never
                 // achieve (a ctx.fill line cannot be an anti-aliased sub-pixel stroke over a soft fill).
-                boolean statusHit = statusSnapshot.contains(town.key());
-                if (layer.statusLayer != statusHit) continue;
+                boolean statusHit = highlightSets.status().contains(town.key());
+                boolean flashHit = highlightSets.flash().contains(town.key());
+                // A map-mode town moves to the highlight layer whole. A flashed claim is split: its
+                // interior stays on the main layer in its own colour and only its BORDER moves, because
+                // the blit tint multiplies the whole tile -- baking the fill there too is what turned a
+                // flashed town's interior steel-white instead of leaving it alone.
+                boolean onLayer = layer.statusLayer ? (statusHit || flashHit) : !statusHit;
+                if (!onLayer) continue;
+                boolean drawStroke = layer.statusLayer || !flashHit;
+                boolean drawFill = layer.statusLayer ? statusHit : true;
                 // Favourites are baked exactly like every other town — identical thin stroke, identical
                 // translucent fill — only the COLOUR differs (gold). Previously they also got a fully
                 // opaque line, which made them shout next to the ~65%-alpha neighbours.
@@ -984,6 +986,7 @@ public class WorldMapRenderer {
                 double th = (town.maxZ() - town.minZ()) * ppb;
                 double dotBelow = config.farZoomTownDots ? 2.5 * density : 1.0;
                 if (Math.max(tw, th) <= dotBelow) {
+                    if (!drawStroke) continue;   // the dot IS the outline; the fill has nothing to add
                     int cx = (int) Math.round(((town.minX() + town.maxX()) / 2.0 - tileWorldX) * ppb);
                     int cy = (int) Math.round(((town.minZ() + town.maxZ()) / 2.0 - tileWorldZ) * ppb);
                     g.setColor(awtColor(0xC8000000 | rgb));   // dot needs more alpha than a stroke to read
@@ -1015,13 +1018,16 @@ public class WorldMapRenderer {
                     anyRing = true;
                 }
                 if (anyRing) {
-                    if (bakeFill) {
+                    if (bakeFill && drawFill) {
                         g.setColor(awtColor((fillAlphaT << 24) | fillRgb));
                         g.fill(path);
+                        drew = true;
                     }
-                    g.setColor(awtColor((strokeAlphaT << 24) | rgb));
-                    g.draw(path);
-                    drew = true;
+                    if (drawStroke) {
+                        g.setColor(awtColor((strokeAlphaT << 24) | rgb));
+                        g.draw(path);
+                        drew = true;
+                    }
                 }
             }
         } finally {

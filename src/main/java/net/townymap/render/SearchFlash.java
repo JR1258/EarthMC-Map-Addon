@@ -30,16 +30,31 @@ public final class SearchFlash {
     private static final long DURATION_MS = 4_000L;
     /** One halo sweep from the claim edge outwards. */
     private static final long SWEEP_MS = 1_150L;
-    /** How far past the claim's own box a halo ring travels, as a share of the box's half-size. */
-    private static final double SWEEP_REACH = 0.55;
+    /** How far past its own border a halo ring travels, in blocks. A constant distance rather than a
+     *  share of the claim's size, so a hamlet and a metropolis get the same visual sweep. */
+    private static final double SWEEP_REACH_BLOCKS = 80.0;
+    /** Above this many flashed claims the halo is dropped -- a whole nation's worth of offset outlines is
+     *  thousands of segments a frame, and by then the white borders are doing the job on their own. */
+    private static final int HALO_MAX_CLAIMS = 12;
+    /** Segments per halo ring. A claim's raw outline can carry hundreds of corners; stepping over them
+     *  keeps the cost flat, and a glow outside the border does not need every one. */
+    private static final int HALO_MAX_SEGMENTS = 120;
     /** Halo rings in flight at once, evenly offset through the sweep. */
     private static final int SWEEP_RINGS = 2;
     /** Chrome: a near-white core over a cool steel halo. */
     private static final int CORE_RGB = 0xF2F6FF;
     private static final int HALO_RGB = 0x9FC2E8;
 
-    /** The box one flashed claim's halo expands out of. The outline comes from the renderer. */
-    private record Shape(int minX, int maxX, int minZ, int maxZ) {}
+    /**
+     * One flashed claim: the outer ring its halo is offset from, and the box used instead when there is
+     * no ring (a player's position). The BORDER is the renderer's business -- these rings are only ever
+     * pushed outwards into open ground, so being a refresh behind cannot misplace anything.
+     */
+    private record Shape(int[] ringX, int[] ringZ, int minX, int maxX, int minZ, int maxZ) {
+        boolean hasRing() { return ringX != null && ringX.length >= 3; }
+        double centreX() { return (minX + maxX) / 2.0; }
+        double centreZ() { return (minZ + maxZ) / 2.0; }
+    }
 
     private static volatile List<Shape> shapes = List.of();
     /** Lower-cased names of the claims whose outline the renderer should take over. */
@@ -67,7 +82,7 @@ public final class SearchFlash {
         java.util.Set<String> nextKeys = new java.util.HashSet<>(Math.max(4, wanted.size() * 2));
         for (TownData town : towns) {
             if (!wanted.contains(town.key())) continue;
-            nextShapes.add(new Shape(town.minX(), town.maxX(), town.minZ(), town.maxZ()));
+            nextShapes.add(outerRing(town));
             nextKeys.add(town.key());
         }
         if (nextShapes.isEmpty()) {
@@ -79,10 +94,34 @@ public final class SearchFlash {
         startedMs = System.currentTimeMillis();
     }
 
+    /** The claim's outer boundary, which is the first ring by GeoJSON convention -- later rings are
+     *  unclaimed pockets inside it, and a halo has no business tracing those. */
+    private static Shape outerRing(TownData town) {
+        List<int[][]> rings = town.polygonRings();
+        if (rings.isEmpty()) {
+            return new Shape(null, null, town.minX(), town.maxX(), town.minZ(), town.maxZ());
+        }
+        int[][] ring = rings.get(0);
+        int[] xs = new int[ring.length];
+        int[] zs = new int[ring.length];
+        int n = 0;
+        for (int[] point : ring) {
+            if (point.length < 2) continue;
+            xs[n] = point[0];
+            zs[n] = point[1];
+            n++;
+        }
+        if (n < 3) {
+            return new Shape(null, null, town.minX(), town.maxX(), town.minZ(), town.maxZ());
+        }
+        return new Shape(java.util.Arrays.copyOf(xs, n), java.util.Arrays.copyOf(zs, n),
+                town.minX(), town.maxX(), town.minZ(), town.maxZ());
+    }
+
     /** Arms the flash on a bare point -- a player, who has no claim of their own to take over. */
     public static void armPoint(int x, int z, int span) {
         int half = Math.max(8, span / 2);
-        shapes = List.of(new Shape(x - half, x + half, z - half, z + half));
+        shapes = List.of(new Shape(null, null, x - half, x + half, z - half, z + half));
         townKeys = Set.of();
         startedMs = System.currentTimeMillis();
     }
@@ -141,32 +180,71 @@ public final class SearchFlash {
         boolean pointOnly = townKeys.isEmpty();
         double beat = 0.5 + 0.5 * Math.sin(age / 150.0);
 
+        boolean halo = snapshot.size() <= HALO_MAX_CLAIMS;
         for (Shape shape : snapshot) {
-            drawHalo(ctx, shape, age, life, cameraX, cameraZ, blockScale, sw, sh);
+            if (halo) drawHalo(ctx, shape, age, life, cameraX, cameraZ, blockScale, sw, sh);
             // A player has no claim for the renderer to take over, so the box itself is the marker.
             if (pointOnly) drawPointMark(ctx, shape, life, beat, cameraX, cameraZ, blockScale, sw, sh);
         }
     }
 
-    /** Rings expanding outwards from the claim's box, offset through the sweep so one is always leaving. */
+    /**
+     * Copies of the claim's own outline pushed outwards, offset through the sweep so one is always
+     * leaving. Each vertex moves a constant distance along its own radius from the claim's centre, so the
+     * halo keeps the claim's shape -- an L-shaped town gets an L-shaped glow -- instead of the bounding
+     * box it used to grow, which sat in open ground on any claim that was not a rectangle.
+     */
     private static void drawHalo(DrawContext ctx, Shape shape, long age, double life,
                                  double cameraX, double cameraZ, double blockScale, int sw, int sh) {
-        double cx = (shape.minX() + shape.maxX()) / 2.0;
-        double cz = (shape.minZ() + shape.maxZ()) / 2.0;
-        // A one-chunk town has almost no box to grow out of, so give every claim a floor to work with.
-        double halfX = Math.max(48.0, (shape.maxX() - shape.minX()) / 2.0);
-        double halfZ = Math.max(48.0, (shape.maxZ() - shape.minZ()) / 2.0);
-
         for (int i = 0; i < SWEEP_RINGS; i++) {
             double phase = ((age + (long) (SWEEP_MS * i / (double) SWEEP_RINGS)) % SWEEP_MS) / (double) SWEEP_MS;
-            double grow = 1.0 + SWEEP_REACH * phase;
-            // Brightest as it leaves the edge, gone by the time it reaches full reach.
+            // Brightest as it leaves the border, gone by the time it reaches full reach.
             int alpha = (int) Math.round(150 * life * (1.0 - phase) * (1.0 - phase));
             if (alpha < 6) continue;
-            double x1 = cx - halfX * grow, x2 = cx + halfX * grow;
-            double z1 = cz - halfZ * grow, z2 = cz + halfZ * grow;
-            box(ctx, x1, z1, x2, z2, (alpha << 24) | HALO_RGB, cameraX, cameraZ, blockScale, sw, sh);
+            int argb = (alpha << 24) | HALO_RGB;
+            double out = SWEEP_REACH_BLOCKS * phase;
+            if (shape.hasRing()) {
+                offsetRing(ctx, shape, out, argb, cameraX, cameraZ, blockScale, sw, sh);
+            } else {
+                // No claim to follow (a player): the box is all there is.
+                double halfX = (shape.maxX() - shape.minX()) / 2.0 + out;
+                double halfZ = (shape.maxZ() - shape.minZ()) / 2.0 + out;
+                double cx = shape.centreX(), cz = shape.centreZ();
+                box(ctx, cx - halfX, cz - halfZ, cx + halfX, cz + halfZ, argb,
+                        cameraX, cameraZ, blockScale, sw, sh);
+            }
         }
+    }
+
+    /** The claim's outline with every vertex pushed {@code out} blocks further from its centre. */
+    private static void offsetRing(DrawContext ctx, Shape shape, double out, int argb,
+                                   double cameraX, double cameraZ, double blockScale, int sw, int sh) {
+        int[] xs = shape.ringX();
+        int[] zs = shape.ringZ();
+        int n = xs.length;
+        int stride = Math.max(1, n / HALO_MAX_SEGMENTS);
+        double cx = shape.centreX(), cz = shape.centreZ();
+        // One pass, no buffers: carry the previous point and the first point, then close the loop at the
+        // end. Each vertex moves out along its own radius, which is what preserves the claim's shape.
+        double firstX = 0, firstY = 0, px = 0, py = 0;
+        int drawn = 0;
+        for (int i = 0; i < n; i += stride) {
+            double dx = xs[i] - cx, dz = zs[i] - cz;
+            double r = Math.hypot(dx, dz);
+            double f = r < 1e-6 ? 0.0 : (r + out) / r;
+            double x = (cx + dx * f - cameraX) * blockScale + sw / 2.0;
+            double y = (cz + dz * f - cameraZ) * blockScale + sh / 2.0;
+            if (drawn == 0) {
+                firstX = x;
+                firstY = y;
+            } else {
+                WorldMapRenderer.drawThinSegment(ctx, px, py, x, y, argb, sw, sh);
+            }
+            px = x;
+            py = y;
+            drawn++;
+        }
+        if (drawn >= 3) WorldMapRenderer.drawThinSegment(ctx, px, py, firstX, firstY, argb, sw, sh);
     }
 
     private static void drawPointMark(DrawContext ctx, Shape shape, double life, double beat,

@@ -1279,11 +1279,6 @@ public class TownyMapMod implements ClientModInitializer {
                 && !(composingScreenshot() && !screenshotWantsPlayers())) {
             renderer.renderPlayersLayer(ctx, cameraX, cameraZ, scale, screenW, screenH, playerDetailsCache);
         }
-        // Last, so the flash lands over the claim tiles and the dots alike. A transient "look here" marker
-        // has no business in a shared screenshot, so it sits out the clean capture.
-        if (!composingScreenshot()) {
-            net.townymap.render.SearchFlash.render(ctx, cameraX, cameraZ, scale, screenW, screenH);
-        }
     }
 
     /**
@@ -1293,14 +1288,9 @@ public class TownyMapMod implements ClientModInitializer {
      */
     public static void flashSearchTarget(net.townymap.model.MapJumpTarget target) {
         if (target == null || config == null || !config.searchFlash) return;
+        // Only claims flash. A player's jump answers with its zoom; there is no border to take over, and
+        // a marker invented for one was just a second thing to look at.
         net.townymap.render.SearchFlash.arm(target.highlightTowns(), currentTowns());
-        if (net.townymap.render.SearchFlash.active()) return;
-        // Nothing resolved to a claim -- a player's live position, or a town the map hasn't drawn. Ring
-        // the spot itself so the jump still points somewhere rather than silently doing nothing.
-        if (target.hasExtent()) {
-            net.townymap.render.SearchFlash.armPoint(target.x(), target.z(),
-                    Math.max(target.spanX(), target.spanZ()));
-        }
     }
 
     /**

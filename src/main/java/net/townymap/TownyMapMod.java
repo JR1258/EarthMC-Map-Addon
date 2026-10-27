@@ -270,16 +270,22 @@ public class TownyMapMod implements ClientModInitializer {
      */
     private static void applyApiTownClaims(net.townymap.api.EarthMcApiClient.TownClaims claims) {
         if (config == null || apiClient == null) return;
-        String world = playerWorldResolved();
-        TownData onMap = townByName(claims.name());
+        // The overworld, not the world the player happens to be standing in: coordinates.townBlocks is
+        // the town's EARTH claim and nothing else. Checked against the live API -- Amsterdam's 569 chunks
+        // match its Terra Nostra outline exactly and its Moon claim is not among them. Taking the
+        // player's world here would write Earth chunks into the Moon's town list.
+        String world = WORLD_OVERWORLD;
+        TownData onMap = townByName(claims.name(), world);
         if (onMap == null) return;   // a town the map has never shown: nothing to re-shape
 
         java.util.List<int[][]> rings = net.townymap.util.ChunkRings.trace(claims.chunks());
         if (rings.isEmpty()) return;
         apiClient.overrideTownGeometry(world, onMap.withRings(rings));
 
-        // Anything the old overlay left for this town is now part of the outline.
-        optimisticClaimChunks.removeIf(c -> claims.name().equalsIgnoreCase(c.townName()));
+        // Anything the old overlay left for this town is now part of the outline -- on this world only,
+        // since a Moon claim the player just made is not described by what the API just told us.
+        optimisticClaimChunks.removeIf(c -> claims.name().equalsIgnoreCase(c.townName())
+                && c.inWorld(world));
         invalidateTownRenderCaches();
     }
 
@@ -498,11 +504,17 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static TownData townByName(String townName) {
-        if (apiClient == null || townName == null) return null;
         // The player's world: this seeds the colours of a chunk they just claimed, which happens where
         // they stand. Reading the shown world meant claiming on Earth with the map pinned to the Moon
         // found no town and fell back to default colours.
-        for (TownData town : apiClient.getTowns(playerWorldResolved())) {
+        return townByName(townName, playerWorldResolved());
+    }
+
+    /** The same lookup against a named world. Town names repeat across worlds -- every Moon town shares
+     *  its name with an Earth one -- so anything world-specific has to say which it means. */
+    private static TownData townByName(String townName, String world) {
+        if (apiClient == null || townName == null) return null;
+        for (TownData town : apiClient.getTowns(world)) {
             if (town.name().equalsIgnoreCase(townName)) return town;
         }
         return null;

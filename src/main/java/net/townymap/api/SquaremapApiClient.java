@@ -106,9 +106,22 @@ public class SquaremapApiClient {
      * 47, so the second world is nearly free.
      */
     private volatile Map<String, List<TownData>> townsByWorld = Map.of();
-    /** Town key -> geometry the API gave us, standing in until the map publishes the same claims. */
+    /**
+     * world + town key -> geometry the API gave us, standing in until the map publishes the same claims.
+     *
+     * <p>Keyed by WORLD as well as town, because a Moon outpost is the same town entity as its Earth
+     * claim and carries the same name -- all 374 of the Moon's towns share a name with an Earth one. A
+     * name-only key therefore collided for every one of them, and an Earth override would replace the
+     * Moon town's outline with Earth geometry at Earth coordinates: the Moon claim vanished and its real
+     * location read as wilderness.
+     */
     private volatile Map<String, TownData> townGeometryOverrides = Map.of();
     private final Map<String, Long> townGeometryOverrideAt = new ConcurrentHashMap<>();
+
+    /** Overrides are per world; a bare town name is ambiguous across Earth and the Moon. */
+    private static String overrideKey(String world, String townKey) {
+        return world + '\0' + townKey;   // \0, not \u0000: a unicode escape is processed before lexing
+    }
     /** An override stands in for publish lag. Past this it is the suspect one, not the map. */
     private static final long GEOMETRY_OVERRIDE_MAX_AGE_MS = 180_000L;
     private volatile List<PlayerMarker> players      = List.of();
@@ -235,25 +248,25 @@ public class SquaremapApiClient {
      * for this one as soon as it publishes the same claims.
      */
     public void overrideTownGeometry(String world, TownData replacement) {
-        if (replacement == null) return;
+        if (replacement == null || world == null) return;
+        String key = overrideKey(world, replacement.key());
         Map<String, TownData> next = new HashMap<>(townGeometryOverrides);
-        next.put(replacement.key(), replacement);
+        next.put(key, replacement);
         townGeometryOverrides = Map.copyOf(next);
-        townGeometryOverrideAt.put(replacement.key(), System.currentTimeMillis());
+        townGeometryOverrideAt.put(key, System.currentTimeMillis());
         applyGeometryOverrides(world);
     }
 
     /** Drops an override, so the town goes back to whatever the map says. */
     public void clearTownGeometryOverride(String world, String townKey) {
-        if (townKey == null || !townGeometryOverrides.containsKey(townKey)) return;
+        if (townKey == null || world == null) return;
+        String key = overrideKey(world, townKey);
+        if (!townGeometryOverrides.containsKey(key)) return;
         Map<String, TownData> next = new HashMap<>(townGeometryOverrides);
-        next.remove(townKey);
+        next.remove(key);
         townGeometryOverrides = Map.copyOf(next);
+        townGeometryOverrideAt.remove(key);
         applyGeometryOverrides(world);
-    }
-
-    public TownData townGeometryOverride(String townKey) {
-        return townKey == null ? null : townGeometryOverrides.get(townKey);
     }
 
     /**
@@ -275,12 +288,12 @@ public class SquaremapApiClient {
             if (now - e.getValue() > GEOMETRY_OVERRIDE_MAX_AGE_MS) done.add(e.getKey());
         }
         for (TownData town : parsed) {
-            TownData over = overrides.get(town.key());
+            TownData over = overrides.get(overrideKey(world, town.key()));
             if (over == null) continue;
             if (town.minX() <= over.minX() && town.maxX() >= over.maxX()
                     && town.minZ() <= over.minZ() && town.maxZ() >= over.maxZ()
                     && town.approximateChunks() == over.approximateChunks()) {
-                done.add(town.key());
+                done.add(overrideKey(world, town.key()));
             }
         }
         if (done.isEmpty()) return;
@@ -297,7 +310,7 @@ public class SquaremapApiClient {
         List<TownData> updated = new ArrayList<>(current.size());
         boolean changed = false;
         for (TownData town : current) {
-            TownData over = overrides.get(town.key());
+            TownData over = overrides.get(overrideKey(world, town.key()));
             if (over != null && over != town) { updated.add(over); changed = true; }
             else updated.add(town);
         }

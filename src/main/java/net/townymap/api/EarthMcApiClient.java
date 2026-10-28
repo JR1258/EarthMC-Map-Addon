@@ -37,6 +37,64 @@ public class EarthMcApiClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("TownyMapAddon");
     private static final String BASE = "https://api.earthmc.net/v4";
+
+    // ── API token ────────────────────────────────────────────────────────────
+    // EarthMC has said tokens are coming for every endpoint (20TB+ of API bandwidth in one month) but
+    // has not published the scheme yet, and there is no reachable spec to read. Bearer is the near
+    // universal convention, so that is the guess -- and it is a guess, which is why the header name and
+    // prefix are two constants here rather than spread through the call sites. If the announcement says
+    // something else, those two lines are the change.
+    private static final String AUTH_HEADER = "Authorization";
+    private static final String AUTH_PREFIX = "Bearer ";
+    /** After a 401/403, stop asking for a while. A storm of rejected requests is the abuse the tokens
+     *  exist to stop, and hammering through one would be the mod misbehaving by exactly that measure. */
+    private static final long AUTH_BACKOFF_MS = 60_000L;
+    private static volatile long authBlockedUntilMs = 0L;
+    private static volatile boolean authRejected = false;
+    private static final java.util.concurrent.atomic.AtomicBoolean authLogged =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** True once the API has refused us for want of a valid token. Cleared by the next accepted call. */
+    public static boolean isAuthRejected() { return authRejected; }
+
+    /**
+     * Attaches the token, if one is set, and only to EarthMC's own API.
+     *
+     * <p>The host check is the point: this mod also talks to squaremap, mc-heads, an alliance host and
+     * GitHub, and a credential must never travel to any of them. {@code url} always starts with BASE
+     * today, so this is a guard against a later change rather than a live condition.
+     */
+    private static void attachToken(HttpRequest.Builder req, String url) {
+        if (!url.startsWith(BASE)) return;
+        var cfg = net.townymap.TownyMapMod.getConfig();
+        if (cfg == null) return;
+        String token = cfg.earthMcApiToken;
+        if (token == null || token.isBlank()) return;
+        req.header(AUTH_HEADER, AUTH_PREFIX + token.trim());
+    }
+
+    /** Whether a call should be skipped because the API is currently refusing our credentials. */
+    private static boolean authBlocked() {
+        return System.currentTimeMillis() < authBlockedUntilMs;
+    }
+
+    /** Records the outcome of a request so the UI can say why the overlay has gone quiet. */
+    private static void noteAuthStatus(int status, String url) {
+        if (status == 401 || status == 403) {
+            authRejected = true;
+            authBlockedUntilMs = System.currentTimeMillis() + AUTH_BACKOFF_MS;
+            if (authLogged.compareAndSet(false, true)) {
+                var cfg = net.townymap.TownyMapMod.getConfig();
+                boolean have = cfg != null && cfg.earthMcApiToken != null && !cfg.earthMcApiToken.isBlank();
+                LOGGER.warn("[TownyMap] EarthMC API refused us (HTTP {}) -- {}. Set it under Settings ->"
+                        + " Advanced -> EarthMC API Key.", status,
+                        have ? "the API key we sent was not accepted" : "no API key is configured");
+            }
+        } else if (status == 200) {
+            authRejected = false;
+            authLogged.set(false);
+        }
+    }
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMM d yyyy");
 
@@ -1073,17 +1131,20 @@ public class EarthMcApiClient {
     }
 
     private String post(String url, String body) {
+        if (authBlocked()) return null;
         try {
-            HttpRequest req = HttpRequest.newBuilder()
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(15))
                     .header("Content-Type", "application/json")
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
-            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+                    .POST(HttpRequest.BodyPublishers.ofString(body));
+            attachToken(builder, url);
+            HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 200) return decodeBody(resp);
+            if (resp.statusCode() == 401 || resp.statusCode() == 403) return null;   // already reported
             // 404 just means "no such entity" (an opt-out, usually) and is expected; logging one line per
             // lookup buried the log. 429 means we are rate-limited and every other request is failing too,
             // so say that once rather than several hundred times.
@@ -1104,16 +1165,19 @@ public class EarthMcApiClient {
     }
 
     private String get(String url) {
+        if (authBlocked()) return null;
         try {
-            HttpRequest req = HttpRequest.newBuilder()
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(java.time.Duration.ofSeconds(20))
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
-                    .GET()
-                .build();
-            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+                    .GET();
+            attachToken(builder, url);
+            HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 200) return decodeBody(resp);
+            if (resp.statusCode() == 401 || resp.statusCode() == 403) return null;   // already reported
             LOGGER.warn("[TownyMap] EarthMC API {} -> HTTP {}", url, resp.statusCode());
         } catch (Exception e) {
             LOGGER.warn("[TownyMap] EarthMC API request failed: {}", e.getMessage());

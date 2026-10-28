@@ -563,6 +563,13 @@ public class TownyMapMod implements ClientModInitializer {
         if (refused != 0) {
             return new MapDataStatus("Map imagery refused (HTTP " + refused + ")", STATUS_BAD);
         }
+        // Claims come from squaremap and keep working without a key; it is the API-backed detail that
+        // stops. Worth saying out loud, because the symptom is panels quietly going empty.
+        if (net.townymap.api.EarthMcApiClient.isAuthRejected()) {
+            boolean have = config.earthMcApiToken != null && !config.earthMcApiToken.isBlank();
+            return new MapDataStatus(have ? "EarthMC API key rejected" : "EarthMC API key required",
+                    STATUS_BAD);
+        }
         // Claims reload every 60s, so anything past two intervals means something is quietly wrong.
         return new MapDataStatus("Claims " + age, ageSec > 150 ? STATUS_STALE : STATUS_OK);
     }
@@ -1299,6 +1306,12 @@ public class TownyMapMod implements ClientModInitializer {
         // a map picture, not a who's-online
         if (!(composingScreenshot() && !screenshotWantsPlayers())) {
             renderer.renderPlayersLayer(ctx, cameraX, cameraZ, scale, screenW, screenH, playerDetailsCache);
+        }
+        // The search flash normally rides the renderer's highlight tiles, but that layer has one tint and
+        // a map mode owns it. This covers that case live. A transient marker has no place in a shared
+        // picture of the map, so it sits out the clean capture.
+        if (!composingScreenshot()) {
+            renderer.renderSearchFlashOutline(ctx, cameraX, cameraZ, scale, screenW, screenH);
         }
     }
 

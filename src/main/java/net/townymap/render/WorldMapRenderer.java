@@ -610,6 +610,35 @@ public class WorldMapRenderer {
     /** Which towns the map mode highlights and which are flashing, snapshotted for one frame's bake. */
     private record Highlights(Set<String> status, Set<String> flash) {}
 
+    /**
+     * Draws the search flash live, for the one case the tile path cannot serve: a map mode is on.
+     *
+     * <p>The highlight tile layer carries one tint for everything on it, so a flash sharing it with
+     * Public/Overclaim/Open would blink every highlighted town white, not just the one searched for.
+     * flashKeys is held empty in that case to keep the mode intact -- which used to mean the search had
+     * no feedback at all once the halo was dropped. One town's border drawn here is a handful of calls,
+     * on the renderer's own ring geometry, so it still lands exactly on the border it replaces.
+     *
+     * <p>Called from the late pass: these are {@code ctx.fill} lines and the outline tiles are textured
+     * quads, which paint straight over them inside a single batch.
+     */
+    public void renderSearchFlashOutline(GuiGraphicsExtractor ctx, double cameraX, double cameraZ,
+                                         double blockScale, int sw, int sh) {
+        if (config == null || blockScale <= 0 || !isHighlightMode()) return;
+        Set<String> keys = net.townymap.render.SearchFlash.activeTownKeys();
+        if (keys.isEmpty()) return;
+        int color = net.townymap.render.SearchFlash.tint();
+        if ((color >>> 24) == 0) return;   // mid-blink: the town's own border is what shows
+        TownRenderCache snapshot = townRenderCache;
+        for (String key : keys) {
+            RenderTown town = snapshot.byName().get(key);
+            if (town == null) continue;
+            for (RingGeometry ring : town.rings()) {
+                renderRing(ctx, ring, 0, color, 0, null, cameraX, cameraZ, blockScale, sw, sh);
+            }
+        }
+    }
+
     /** The single-colour highlight modes (Public/Overclaim/Open). Modes 4/5 recolour the source instead. */
     private boolean isHighlightMode() {
         int m = config.townStatusOverlayMode;

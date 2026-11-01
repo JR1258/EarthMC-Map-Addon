@@ -702,7 +702,10 @@ public class TownyMapMod implements ClientModInitializer {
     // Selectable map modes. "Overclaim" (2) is omitted until EarthMC's API exposes active-resident
     // counts — its claim max is wrong without them, so over-claim detection misfires. The case is kept
     // (commented) in the highlight switch and labels so it can be re-enabled later.
-    private static final int[] STATUS_MODES = {0, 1, 2, 3, 4, 5, 6};   // 6 = Planning
+    /** Map mode that draws the ice highway network. Unlike 1-5 it recolours nothing: it is a layer over
+     *  the towns, not a way of colouring them, which is why nothing else in here tests for it. */
+    public static final int ICE_HIGHWAYS_MODE = 7;
+    private static final int[] STATUS_MODES = {0, 1, 2, 3, 4, 5, 6, 7};   // 6 = Planning, 7 = Ice Highways
 
     /** Advance the map-mode value to the next/previous selectable mode, skipping disabled ones. */
     public static int nextStatusMode(int current, boolean backward) {
@@ -1275,8 +1278,8 @@ public class TownyMapMod implements ClientModInitializer {
             if (config.customOverlaysEnabled) {
                 net.townymap.integration.CustomOverlayManager.render(ctx, cameraX, cameraZ, scale, screenW, screenH);
             }
-            // Only fetched once it is switched on: nobody pays for a layer they do not use.
-            if (config.iceHighwaysEnabled) {
+            // Only fetched once the mode is selected: nobody pays for a layer they do not use.
+            if (config.townStatusOverlayMode == ICE_HIGHWAYS_MODE) {
                 net.townymap.integration.CustomOverlayManager.ensureIceHighways();
                 net.townymap.integration.CustomOverlayManager.renderIceHighways(
                         ctx, cameraX, cameraZ, scale, screenW, screenH);

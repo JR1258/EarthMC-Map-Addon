@@ -24,7 +24,7 @@ public final class MapToggleOverlay {
     private static final int ADD_WIDTH = 20;
     private static final int FILL_WIDTH = 34;
     private static final int SETTINGS_GAP = 7;   // extra gap above the settings button
-    private static final int TOGGLE_ROWS = 6;    // Squaremap | Borders | Map mode | World | Chunks | Counter
+    private static final int TOGGLE_ROWS = 7;    // Squaremap | Borders | Map mode | World | Chunks | Counter | Highways
 
     private MapToggleOverlay() {}
 
@@ -45,6 +45,10 @@ public final class MapToggleOverlay {
                 !TownyMapMod.viewingEarth() || config.mapWorldMode != TownyMapMod.WORLD_MODE_AUTO);
         drawToggle(ctx, tr, 4, y, "Chunks", config.chunkGridEnabled);
         drawMode(ctx, tr, 5, y, "Counter", ChunkCounterOverlay.toolbarLabel(config), config.chunkCounterEnabled);
+        drawToggle(ctx, tr, 6, y,
+                config.iceHighwaysEnabled && !net.townymap.integration.CustomOverlayManager.hasIceHighways()
+                        ? "Highways..." : "Highways",
+                config.iceHighwaysEnabled);
         if (config.chunkCounterEnabled) {
             if (ChunkCounterOverlay.isMultiMode(config)) {
                 drawCounterGroupButtons(ctx, tr, config);
@@ -96,6 +100,7 @@ public final class MapToggleOverlay {
                 // round to Auto is how the following is resumed.
                 case 3 -> config.mapWorldMode = (config.mapWorldMode + (backward ? 2 : 1)) % 3;
                 case 4 -> config.chunkGridEnabled = !config.chunkGridEnabled;
+                case 6 -> config.iceHighwaysEnabled = !config.iceHighwaysEnabled;
                 case 5 -> {
                     if (config.chunkCounterEnabled) ChunkCounterOverlay.flushSelection();
                     if (!config.chunkCounterEnabled) {

@@ -1270,6 +1270,12 @@ public class TownyMapMod implements ClientModInitializer {
             if (config.customOverlaysEnabled) {
                 net.townymap.integration.CustomOverlayManager.render(ctx, cameraX, cameraZ, scale, screenW, screenH);
             }
+            // Only fetched once it is switched on: nobody pays for a layer they do not use.
+            if (config.iceHighwaysEnabled) {
+                net.townymap.integration.CustomOverlayManager.ensureIceHighways();
+                net.townymap.integration.CustomOverlayManager.renderIceHighways(
+                        ctx, cameraX, cameraZ, scale, screenW, screenH);
+            }
         }
     }
 

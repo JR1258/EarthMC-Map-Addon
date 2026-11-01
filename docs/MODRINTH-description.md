@@ -30,7 +30,7 @@ A client-side EarthMC map extension for **Xaero's World Map** and **Xaero's Mini
 
 ## Map modes
 
-- Six status modes: Public, Overclaim, Open, Meganations, Alliances, and Planning. The first three highlight matching towns in a colour you pick (fixed or RGB cycling); Meganations and Alliances recolour towns by bloc instead, and use the BreakTheBot Alliance API.
+- Seven map modes: Public, Overclaim, Open, Meganations, Alliances, Planning, and Ice Highways. The first three highlight matching towns in a colour you pick (fixed or RGB cycling); Meganations and Alliances recolour towns by bloc instead, and use the BreakTheBot Alliance API. Ice Highways draws EarthMC's ice highway network over the map, using XiLeF2211's community-maintained [Ice Highways Map](https://xilef2211.github.io/ice-highways-map/) data, fetched only while that mode is selected.
 - Planning mode turns the search bar into a nation picker and lets you place prospective towns (T1, T2, …) with numbered map markers. Towns outside the nation's range are marked red on both the chip and the map.
 
 ## Search

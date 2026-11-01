@@ -65,6 +65,86 @@ public final class CustomOverlayManager {
     private static volatile Data data = Data.EMPTY;
     private static volatile boolean loadScheduled = false;
 
+    // ── Built-in layer: the EarthMC Ice Highways Map ──────────────────────────
+    // Community-maintained by XiLeF2211 (github.com/XiLeF2211/ice-highways-map), the same file the web
+    // map reads. Fetched rather than bundled so it stays current, and it is the ONE shape this loader
+    // was already written around, so nothing here parses or draws differently -- only where it comes
+    // from is new.
+    private static final String ICE_HIGHWAYS_URL =
+            "https://raw.githubusercontent.com/XiLeF2211/ice-highways-map/refs/heads/main/nostra/highways.json";
+    /** 607 KB raw, 63 KB gzipped, and it changes a few times a week at most -- so once a session, with
+     *  an ETag making every later check a 304 with no body. */
+    private static final long ICE_REFRESH_MS = 6L * 60 * 60 * 1000;
+    private static volatile Data iceData = Data.EMPTY;
+    private static volatile long iceFetchedAtMs = 0L;
+    private static volatile boolean iceLoading = false;
+    private static volatile String iceEtag = null;
+    private static final java.net.http.HttpClient ICE_HTTP = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(10))
+            .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+            .build();
+
+    /** Fetches the highway map if it has never been loaded or the copy in hand has gone stale. */
+    public static void ensureIceHighways() {
+        long now = System.currentTimeMillis();
+        if (iceLoading || now - iceFetchedAtMs < ICE_REFRESH_MS) return;
+        iceLoading = true;
+        EXEC.execute(() -> {
+            try {
+                var req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(ICE_HIGHWAYS_URL))
+                        .timeout(java.time.Duration.ofSeconds(20))
+                        .header("User-Agent", net.townymap.util.UserAgent.get())
+                        .header("Accept-Encoding", "gzip");
+                String tag = iceEtag;
+                if (tag != null) req.header("If-None-Match", tag);
+                var resp = ICE_HTTP.send(req.GET().build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+                if (resp.statusCode() == 304) {           // unchanged: keep what we have, cost one header
+                    iceFetchedAtMs = System.currentTimeMillis();
+                    return;
+                }
+                if (resp.statusCode() != 200) {
+                    LOGGER.warn("[TownyMap] Ice highways: HTTP {}", resp.statusCode());
+                    return;
+                }
+                resp.headers().firstValue("etag").ifPresent(v -> iceEtag = v);
+                ArrayList<Line> lines = new ArrayList<>();
+                ArrayList<Marker> markers = new ArrayList<>();
+                parseAny(JsonParser.parseString(decodeBody(resp)), lines, markers);
+                iceData = new Data(List.copyOf(lines), List.copyOf(markers));
+                iceFetchedAtMs = System.currentTimeMillis();
+                LOGGER.info("[TownyMap] Ice highways: {} routes, {} stations",
+                        iceData.lines().size(), iceData.markers().size());
+            } catch (Exception e) {
+                // The layer simply stays empty; it is a nice-to-have over someone else's data.
+                LOGGER.warn("[TownyMap] Could not load the ice highway map: {}", e.getMessage());
+            } finally {
+                iceLoading = false;
+            }
+        });
+    }
+
+    private static String decodeBody(java.net.http.HttpResponse<byte[]> resp) throws IOException {
+        boolean gzip = resp.headers().firstValue("content-encoding")
+                .map(v -> v.toLowerCase().contains("gzip")).orElse(false);
+        byte[] body = resp.body();
+        if (!gzip) return new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        try (var in = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    public static boolean hasIceHighways() {
+        Data d = iceData;
+        return !d.lines().isEmpty() || !d.markers().isEmpty();
+    }
+
+    /** Draws the built-in highway layer. Same geometry path as the user's own overlays. */
+    public static void renderIceHighways(GuiGraphicsExtractor ctx, double cameraX, double cameraZ,
+                                         double blockScale, int sw, int sh) {
+        render(ctx, iceData, cameraX, cameraZ, blockScale, sw, sh);
+    }
+
     private CustomOverlayManager() {}
 
     // ── Data model ────────────────────────────────────────────────────────────
@@ -374,7 +454,11 @@ public final class CustomOverlayManager {
 
     public static void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ,
                               double blockScale, int sw, int sh) {
-        Data d = data;
+        render(ctx, data, cameraX, cameraZ, blockScale, sw, sh);
+    }
+
+    private static void render(GuiGraphicsExtractor ctx, Data d, double cameraX, double cameraZ,
+                               double blockScale, int sw, int sh) {
         if (blockScale <= 0 || d.lines().isEmpty() && d.markers().isEmpty()) return;
 
         double worldLeft   = cameraX - sw / 2.0 / blockScale;

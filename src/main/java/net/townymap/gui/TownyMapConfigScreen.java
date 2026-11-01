@@ -66,6 +66,9 @@ public class TownyMapConfigScreen extends Screen {
     /** Help text for the settings whose label does not explain them on its own. Options not listed here
      *  are self-describing, so the strip simply stays empty rather than repeating the label back. */
     private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
+            Map.entry("Ice Highways",
+                    "Draws EarthMC's ice highway network over the world map, from XiLeF2211's"
+                            + " community-maintained map. Fetched when you switch it on, not before."),
             Map.entry("EarthMC API Key",
                     "Your personal EarthMC API key, sent only to api.earthmc.net. Leave blank until"
                             + " EarthMC starts requiring one. A saved key is never shown again."),
@@ -400,6 +403,9 @@ public class TownyMapConfigScreen extends Screen {
         option("UI Scale", new PanelScaleSlider(ctrlX, 0, CTRL_W, 20, cfg),
                 () -> cfg.infoPanelScale == DEFAULTS.infoPanelScale,
                 () -> cfg.infoPanelScale = DEFAULTS.infoPanelScale);
+        option("Ice Highways", onOff(cfg.iceHighwaysEnabled, v -> cfg.iceHighwaysEnabled = v),
+                () -> cfg.iceHighwaysEnabled == DEFAULTS.iceHighwaysEnabled,
+                () -> cfg.iceHighwaysEnabled = DEFAULTS.iceHighwaysEnabled);
         option("Custom Overlays", onOff(cfg.customOverlaysEnabled, v -> {
             cfg.customOverlaysEnabled = v;
             if (v) net.townymap.integration.CustomOverlayManager.reload();

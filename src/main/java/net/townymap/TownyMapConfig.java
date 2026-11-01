@@ -129,6 +129,9 @@ public class TownyMapConfig {
     public boolean smoothTownOutlines = true;
     public boolean chunkGridEnabled = false;
     public boolean customOverlaysEnabled = false;
+    /** The built-in EarthMC Ice Highway layer (XiLeF2211's map, fetched live). Off by default: it is a
+     *  dense extra layer and most people are not travelling when they open the map. */
+    public boolean iceHighwaysEnabled = false;
     /** Draw the name next to each custom-overlay marker. Off leaves just the dots. */
     public boolean customOverlayLabels = true;
     /** Drop temporary Xaero waypoints on the shops returned by QuickShop's {@code /qs find}. */

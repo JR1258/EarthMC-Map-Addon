@@ -38,80 +38,13 @@ public class EarthMcApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger("TownyMapAddon");
     private static final String BASE = "https://api.earthmc.net/v4";
 
-    // ── API token ────────────────────────────────────────────────────────────
-    // EarthMC requires a key on every endpoint from 2026-11-19 (announced 2026-11-03; free, via the
-    // in-game /api key create). Bearer was a guess when this was written and is now confirmed: their
-    // OpenAPI document marks /v4/events as BearerAuth, that being the one endpoint already keyed.
-    private static final String AUTH_HEADER = "Authorization";
-    private static final String AUTH_PREFIX = "Bearer ";
-    /**
-     * The host the key may be sent to.
-     *
-     * <p>Scoped to the host rather than to {@link #BASE}, because the live player feed moved to
-     * /map/v1/players -- same host and same key, but not under /v4, so a BASE check would have left it
-     * unauthenticated and quietly 401ing from the 19th. The trailing slash is what keeps this a host
-     * check: without it "api.earthmc.net.example.com" would match.
-     */
-    static final String API_HOST = "https://api.earthmc.net/";
-    /** After a 401/403, stop asking for a while. A storm of rejected requests is the abuse the tokens
-     *  exist to stop, and hammering through one would be the mod misbehaving by exactly that measure. */
-    private static final long AUTH_BACKOFF_MS = 60_000L;
-    private static volatile long authBlockedUntilMs = 0L;
-    private static volatile boolean authRejected = false;
-    private static final java.util.concurrent.atomic.AtomicBoolean authLogged =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
+    // No API key handling here on purpose. EarthMC announced on 2026-11-03 that keys would be required
+    // from the 19th, and the groundwork written then has been taken out again: their published docs
+    // still describe a key as optional, nothing on the API answers 401 or 403 yet, and a settings field
+    // plus a chat warning that cannot fire is noise for every user. What goes back in when it is needed:
+    // an "Authorization: Bearer <key>" header (their documented format), a host check so the key reaches
+    // api.earthmc.net and none of the other hosts this mod talks to, and a 401/403 backoff.
 
-    /** True once the API has refused us for want of a valid token. Cleared by the next accepted call. */
-    public static boolean isAuthRejected() { return authRejected; }
-
-    /**
-     * Attaches the token, if one is set, and only to EarthMC's own API.
-     *
-     * <p>The host check is the point: this mod also talks to squaremap, mc-heads, an alliance host and
-     * GitHub, and a credential must never travel to any of them. Shared with {@link SquaremapApiClient},
-     * which polls the player feed on the same host and so needs the same key.
-     */
-    static void attachToken(HttpRequest.Builder req, String url) {
-        if (!url.startsWith(API_HOST)) return;
-        var cfg = net.townymap.TownyMapMod.getConfig();
-        if (cfg == null) return;
-        String token = cfg.earthMcApiToken;
-        if (token == null || token.isBlank()) return;
-        req.header(AUTH_HEADER, AUTH_PREFIX + token.trim());
-    }
-
-    /** Whether a call should be skipped because the API is currently refusing our credentials. */
-    static boolean authBlocked() {
-        return System.currentTimeMillis() < authBlockedUntilMs;
-    }
-
-    /** Records the outcome of a request so the UI can say why the overlay has gone quiet. */
-    static void noteAuthStatus(int status, String url) {
-        if (status == 401 || status == 403) {
-            authRejected = true;
-            authBlockedUntilMs = System.currentTimeMillis() + AUTH_BACKOFF_MS;
-            if (authLogged.compareAndSet(false, true)) {
-                var cfg = net.townymap.TownyMapMod.getConfig();
-                boolean have = cfg != null && cfg.earthMcApiToken != null && !cfg.earthMcApiToken.isBlank();
-                LOGGER.warn("[TownyMap] EarthMC API refused us (HTTP {}) -- {}. Run /api key create"
-                        + " in game, then paste the key under Settings -> Advanced -> EarthMC API Key.",
-                        status, have ? "the API key we sent was not accepted"
-                                     : "no API key is configured");
-                // Worth a line in chat, not just the log: from 2026-11-19 a missing key takes the
-                // player dots and every detail panel with it, and the only symptom is things being
-                // empty. Once per session -- authLogged is reset by the next accepted call.
-                net.townymap.TownyMapMod.sendFeedback(have
-                        ? "EarthMC rejected your API key. Run /api key create for a new one, then paste"
-                          + " it under Settings -> Advanced."
-                        : "EarthMC now needs an API key. Run /api key create, then paste it under"
-                          + " Settings -> Advanced -> EarthMC API Key.",
-                        net.minecraft.ChatFormatting.RED);
-            }
-        } else if (status == 200) {
-            authRejected = false;
-            authLogged.set(false);
-        }
-    }
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMM d yyyy");
 
@@ -1148,7 +1081,6 @@ public class EarthMcApiClient {
     }
 
     private String post(String url, String body) {
-        if (authBlocked()) return null;
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -1157,11 +1089,8 @@ public class EarthMcApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .POST(HttpRequest.BodyPublishers.ofString(body));
-            attachToken(builder, url);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 200) return decodeBody(resp);
-            if (resp.statusCode() == 401 || resp.statusCode() == 403) return null;   // already reported
             // 404 just means "no such entity" (an opt-out, usually) and is expected; logging one line per
             // lookup buried the log. 429 means we are rate-limited and every other request is failing too,
             // so say that once rather than several hundred times.
@@ -1182,7 +1111,6 @@ public class EarthMcApiClient {
     }
 
     private String get(String url) {
-        if (authBlocked()) return null;
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -1190,11 +1118,8 @@ public class EarthMcApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET();
-            attachToken(builder, url);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 200) return decodeBody(resp);
-            if (resp.statusCode() == 401 || resp.statusCode() == 403) return null;   // already reported
             LOGGER.warn("[TownyMap] EarthMC API {} -> HTTP {}", url, resp.statusCode());
         } catch (Exception e) {
             LOGGER.warn("[TownyMap] EarthMC API request failed: {}", e.getMessage());

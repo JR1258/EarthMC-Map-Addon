@@ -46,8 +46,8 @@ public class SquaremapApiClient {
     private static final String PLAYER_HISTORY_FILE = "townymapaddon-player-history.json";
     private static final int MAX_PLAYER_HISTORY = 800;
     private static final long TOWN_MARKER_REFRESH_MS = 60_000L;
-    // squaremap regenerates players.json ~every 1.2s (measured: min 0.68s, max 2.07s), so fetching at ~1s
-    // captures essentially every update — faster just re-downloads identical data. This is the live player
+    // The player feed regenerates about once a second (max-age=1), so fetching at ~1s captures
+    // essentially every update — faster just re-asks for data we already have. This is the live player
     // rate, independent of the (coarser, non-UI) refreshPlayersSecs config.
     private static final long PLAYER_REFRESH_MS = 1_000L;
     /** Cadence with only the minimap up -- see {@link #tickPlayers()}. */
@@ -156,8 +156,8 @@ public class SquaremapApiClient {
     /**
      * Remembers how long the server said this document stays fresh.
      *
-     * <p>squaremap publishes its intent on every response -- markers.json says {@code max-age=120},
-     * players.json says {@code max-age=1} -- and we were polling markers every 60 seconds, twice as
+     * <p>Both hosts publish their intent on every response -- markers.json says {@code max-age=120},
+     * the player feed says {@code max-age=1} -- and we were polling markers every 60 seconds, twice as
      * often as asked. Those extra polls come back 304 so they cost little, but they are still requests
      * nobody wanted, and reading the header means that if EarthMC ever raises it to shed load we slow
      * down on our own instead of waiting for a mod update.
@@ -193,6 +193,9 @@ public class SquaremapApiClient {
 
     /** Last ETag seen per URL, so we can ask the server to skip sending unchanged data. */
     private final Map<String, String> etags = new ConcurrentHashMap<>();
+    /** Last-Modified per URL, for documents that revalidate by date instead of ETag -- the EarthMC
+     *  player feed offers no ETag, and at one poll a second the 304s are the whole saving. */
+    private final Map<String, String> lastModified = new ConcurrentHashMap<>();
     /** Unique instance: get() returns this when the server said 304, so it is distinct from any body. */
     private static final String NOT_MODIFIED = new String("__not_modified__");
     private volatile boolean markerFetchFailing = false;
@@ -455,18 +458,23 @@ public class SquaremapApiClient {
         scheduler.schedule(this::forceTownMarkerRefresh, Math.max(0, delayMs), TimeUnit.MILLISECONDS);
     }
 
-    /** Refreshes player positions from squaremap's players.json (NOT the EarthMC API). Driven by both the
-     *  world map and the minimap at the live PLAYER_REFRESH_MS rate (~1s, matching squaremap's own update
-     *  cadence) and de-duped via playerFetchRunning, so positions stay live during normal play (minimap)
-     *  and not just while the full map is open. */
+    /** Refreshes player positions from EarthMC's map player feed. Driven by both the world map and the
+     *  minimap at the live PLAYER_REFRESH_MS rate (~1s, matching the feed's own update cadence) and
+     *  de-duped via playerFetchRunning, so positions stay live during normal play (minimap) and not
+     *  just while the full map is open. */
     /**
-     * Polls squaremap's player feed, faster while the world map is open.
+     * Polls EarthMC's player feed, faster while the world map is open.
      *
-     * <p>players.json is the one document that never revalidates: it changes every tick by design, so
-     * every poll is a full body and the interval is a straight multiplier on bandwidth -- roughly 24 MB
-     * an hour at one second. That rate only buys anything on the world map, where dots are watched
-     * moving across a wide view. On the minimap alone, where they are a handful of pixels near the
-     * player, a slower poll is not visible, so it is not worth paying for.
+     * <p>The squaremap file this replaced never revalidated, so every poll was a full body and the
+     * interval was a straight multiplier on bandwidth -- roughly 24 MB an hour at one second. The
+     * endpoint on the API host does honour If-Modified-Since, so polls landing inside the same second
+     * now cost an empty 304. The interval still matters: a body is ~2.9 KB gzipped and the rate only
+     * buys anything on the world map, where dots are watched moving across a wide view. On the minimap
+     * alone, where they are a handful of pixels near the player, a slower poll is not visible.
+     *
+     * <p>It also spends the API rate limit (180 requests a minute, counted against the key), and one
+     * poll a second is a third of it before any town or nation lookup, which is the other reason not
+     * to go faster.
      *
      * <p>markers.json is deliberately left alone: it carries an ETag and only regenerates every few
      * minutes, so the polls in between already cost nothing and slowing them down would buy staleness
@@ -698,6 +706,10 @@ public class SquaremapApiClient {
      * transfer simply does not finish. squaremap has always offered gzip; we just never asked.
      */
     private String get(String url) {
+        // The player feed lives on EarthMC's API host rather than squaremap since 2026-11-03, so this
+        // helper now serves both and has to carry the key for the one and not the other.
+        boolean earthMcApi = url.startsWith(EarthMcApiClient.API_HOST);
+        if (earthMcApi && EarthMcApiClient.authBlocked()) return null;
         try {
             HttpRequest.Builder reqB = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -705,18 +717,27 @@ public class SquaremapApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET();
+            if (earthMcApi) EarthMcApiClient.attachToken(reqB, url);
             // "Only send it if it changed since the copy I already have." markers.json regenerates every
             // couple of minutes while we poll every 60s, so most polls come back 304 with an empty body
             // instead of 1.4 MB. The ETag must be the one from a gzipped response -- the server issues a
             // different tag per encoding, and mixing them silently defeats the whole thing.
             String prior = etags.get(url);
             if (prior != null) reqB.header("If-None-Match", prior);
+            // The player feed revalidates by date instead: no ETag, but it does honour If-Modified-Since,
+            // which the squaremap file it replaced never did. Worth asking for at a poll a second.
+            String since = lastModified.get(url);
+            if (prior == null && since != null) reqB.header("If-Modified-Since", since);
             HttpRequest req = reqB.build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
             noteCachePolicy(url, resp);
+            // Only for EarthMC's own host: a 200 from squaremap says nothing about the key, and letting
+            // one clear a rejection would hide the reason the panels went empty.
+            if (earthMcApi) EarthMcApiClient.noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 304) return NOT_MODIFIED;
             if (resp.statusCode() == 200) {
                 resp.headers().firstValue("ETag").ifPresent(tag -> etags.put(url, tag));
+                resp.headers().firstValue("Last-Modified").ifPresent(d -> lastModified.put(url, d));
                 return decodeBody(resp);
             }
             LOGGER.warn("[TownyMap] HTTP {} from {}", resp.statusCode(), url);
@@ -913,7 +934,7 @@ public class SquaremapApiClient {
                         pname.toLowerCase(Locale.ROOT), world == null ? "" : world));
             }
         } catch (Exception e) {
-            LOGGER.error("[TownyMap] Failed to parse players.json", e);
+            LOGGER.error("[TownyMap] Failed to parse the player feed", e);
         }
         return result;
     }

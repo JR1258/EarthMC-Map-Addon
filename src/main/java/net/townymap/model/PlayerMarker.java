@@ -3,7 +3,7 @@ package net.townymap.model;
 import java.util.Locale;
 
 /**
- * A live player position from squaremap's players.json. {@code yaw} is Minecraft's facing yaw.
+ * A live player position from EarthMC's map player feed. {@code yaw} is Minecraft's facing yaw.
  *
  * <p>{@code world} is squaremap's world name for where the player is. It is kept on the marker rather
  * than filtered away at parse time because two surfaces want different answers: the world map draws the

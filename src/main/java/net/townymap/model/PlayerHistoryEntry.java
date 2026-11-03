@@ -1,7 +1,7 @@
 package net.townymap.model;
 
 /**
- * A player's last known position from squaremap's players.json.
+ * A player's last known position from EarthMC's map player feed.
  *
  * <p>{@code world} is squaremap's world name for where they were. Without it the store was a flat
  * name -> X/Z map, so lunar positions could only have been drawn back on Terra Nostra -- which is why

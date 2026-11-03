@@ -187,7 +187,8 @@ public class TownyMapConfig {
     // ── API endpoints ────────────────────────────────────────────────────────
     public String squaremapBaseUrl = "https://map.earthmc.net";
     /**
-     * Personal EarthMC API key, sent only to api.earthmc.net. Blank until EarthMC starts requiring one.
+     * Personal EarthMC API key, sent only to api.earthmc.net. Required by EarthMC from 2026-11-19 for
+     * every endpoint, including the player feed; free from the in-game {@code /api key create}.
      *
      * <p>Kept out of every log line and shown masked in the settings screen: this mod has a one-click
      * map screenshot, and a key readable in a shared picture is a key given away.
@@ -226,8 +227,18 @@ public class TownyMapConfig {
     public String worldsUrl() {
         return squaremapBaseUrl + "/tiles/settings.json";
     }
+    /**
+     * Live player positions.
+     *
+     * <p>Not a squaremap document any more: EarthMC replaced tiles/players.json with this endpoint on
+     * 2026-11-03. Same marker fields, so the parser is unchanged, but it sits on the API host and so
+     * needs an API key from 2026-11-19 -- which is why it is a fixed URL rather than hanging off
+     * {@code squaremapBaseUrl}. Pointing it at another host would send the key there.
+     */
+    public static final String PLAYERS_URL = "https://api.earthmc.net/map/v1/players";
+
     public String playersUrl() {
-        return squaremapBaseUrl + "/tiles/players.json";
+        return PLAYERS_URL;
     }
 
     // ── Persistence ──────────────────────────────────────────────────────────

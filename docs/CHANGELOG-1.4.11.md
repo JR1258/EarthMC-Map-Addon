@@ -2,7 +2,7 @@
 
 **Waypoints**
 - Xaero's waypoints are visible on the world map again. The EarthMC layer was being drawn after Xaero's markers rather than before them, so with the Squaremap layer on it painted over every waypoint on the map. Tracked players and footsteps were going the same way.
-- Right-clicking empty map opens Xaero's own menu again, so you can add a waypoint, teleport or share a location from the map. Right-clicking a town still opens the town panel; unclaimed ground is Xaero's.
+- Right-clicking empty map opens Xaero's own menu again, so you can add a waypoint, teleport or share a location from the map. Right-clicking a town still opens the town panel; unclaimed ground is Xaero's. Settings -> World Map -> Wilderness Town Info puts the old behaviour back if you preferred it.
 - Waypoints no longer disappear from the enlarged minimap, or on frames where the EarthMC layer drew nothing.
 - On 1.21.11 only: your waypoints, the player arrow and the waypoint set name no longer show up on a map of a world you are not standing in, usually the Moon. The three hooks that suppress them named the method using the newer Minecraft versions' name for it, so on that build they had never once run.
 

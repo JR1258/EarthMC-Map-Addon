@@ -113,6 +113,15 @@ public class TownyMapConfig {
     // keeping it centred on the camera) so you can zoom out to see the whole EarthMC map. On by default.
     public boolean worldMapOverview = true;
     public boolean nationStarsEnabled = true;
+    /**
+     * Right-clicking unclaimed ground looks the spot up and opens the town panel, the way it did
+     * before 1.4.11, instead of letting the click reach Xaero.
+     *
+     * <p>Off by default. Xaero's own right-click menu is the only way to add a waypoint, teleport or
+     * share a location from the world map, and on empty ground that is worth more than a panel telling
+     * you the ground is empty. Claimed land is unaffected either way: it has always been ours.
+     */
+    public boolean wildernessTownInfo = false;
     /** Show a nation's join-range zone on the world map when it's selected: a 5k circle around the capital
      *  plus a 1.5k circle around every town, whose union is where a town could join that nation. */
     public boolean nationRangeEnabled = true;

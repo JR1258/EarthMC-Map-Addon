@@ -564,14 +564,6 @@ public class TownyMapMod implements ClientModInitializer {
         if (refused != 0) {
             return new MapDataStatus("Map imagery refused (HTTP " + refused + ")", STATUS_BAD);
         }
-        // Claims come from squaremap and keep working without a key. The API-backed detail stops, and
-        // since 2026-11-03 so do the player dots -- the feed moved onto the keyed host. Worth saying
-        // out loud, because the symptom is panels and the map quietly going empty.
-        if (net.townymap.api.EarthMcApiClient.isAuthRejected()) {
-            boolean have = config.earthMcApiToken != null && !config.earthMcApiToken.isBlank();
-            return new MapDataStatus(have ? "EarthMC API key rejected" : "EarthMC API key required",
-                    STATUS_BAD);
-        }
         // Claims reload every 60s, so anything past two intervals means something is quietly wrong.
         return new MapDataStatus("Claims " + age, ageSec > 150 ? STATUS_STALE : STATUS_OK);
     }
@@ -3822,7 +3814,7 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
-    public static void sendFeedback(String message, ChatFormatting color) {
+    private static void sendFeedback(String message, ChatFormatting color) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return;
         client.player.sendSystemMessage(Component.literal("[TownyMap] ")

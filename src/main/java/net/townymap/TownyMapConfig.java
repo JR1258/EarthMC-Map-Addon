@@ -186,14 +186,6 @@ public class TownyMapConfig {
 
     // ── API endpoints ────────────────────────────────────────────────────────
     public String squaremapBaseUrl = "https://map.earthmc.net";
-    /**
-     * Personal EarthMC API key, sent only to api.earthmc.net. Required by EarthMC from 2026-11-19 for
-     * every endpoint, including the player feed; free from the in-game {@code /api key create}.
-     *
-     * <p>Kept out of every log line and shown masked in the settings screen: this mod has a one-click
-     * map screenshot, and a key readable in a shared picture is a key given away.
-     */
-    public String earthMcApiToken = "";
     public String worldKey         = "minecraft_overworld";
     /**
      * Which squaremap world the map shows: 0 = Terra Nostra, 1 = the Moon.
@@ -492,11 +484,7 @@ public class TownyMapConfig {
     private static final java.util.Set<String> PRESERVED_ON_RESET = java.util.Set.of(
             "favoriteTowns", "favoriteNations", "favoritePlayers",
             "chunkCounterSelection", "chunkCounterGroups",
-            "activeChunkCounterGroup", "chunkCounterGroupCount",
-            // A credential is not a display preference. Reset All is for "put the look back"; losing the
-            // API key to it would mean going and fetching it again, and the key field never shows the
-            // saved value back, so there would be nothing to copy from either.
-            "earthMcApiToken");
+            "activeChunkCounterGroup", "chunkCounterGroupCount");
 
     /**
      * Copies every persisted field of this config into {@code target}. "Reset All" uses a freshly

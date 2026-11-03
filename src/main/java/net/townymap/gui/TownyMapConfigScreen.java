@@ -66,10 +66,6 @@ public class TownyMapConfigScreen extends Screen {
     /** Help text for the settings whose label does not explain them on its own. Options not listed here
      *  are self-describing, so the strip simply stays empty rather than repeating the label back. */
     private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
-            Map.entry("EarthMC API Key",
-                    "Your personal EarthMC API key, sent only to api.earthmc.net. Required from"
-                            + " November 19 for player dots and town details: run /api key create in"
-                            + " game to get one. A saved key is never shown again."),
             Map.entry("EarthMC Only",
                     "Only run on EarthMC. Turn off to use the overlay on any server."),
             Map.entry("EarthMC Map In Nether",
@@ -155,7 +151,6 @@ public class TownyMapConfigScreen extends Screen {
     private TownyMapConfig cfg;
     private EditBox searchField;
     private EditBox archiveField;   // Advanced → type a dd/mm/yyyy date + Enter to open the archive
-    private EditBox apiKeyField;    // Advanced → write-only: a saved key is never drawn back
     private Button screenshotKeyButton;
     private Button refreshKeyButton;
     private Button statsKeyButton;   // Advanced → rebind the clean-map-screenshot key
@@ -424,23 +419,6 @@ public class TownyMapConfigScreen extends Screen {
                 () -> cfg.shopWaypointRange = DEFAULTS.shopWaypointRange);
         action("Reload Overlays", () -> net.townymap.integration.CustomOverlayManager.reload());
 
-        boolean haveKey = cfg.earthMcApiToken != null && !cfg.earthMcApiToken.isBlank();
-        apiKeyField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("EarthMC API Key"));
-        apiKeyField.setMaxLength(128);
-        // Write-only on purpose. A saved key is never put back in the box, so it cannot be read off a
-        // shared screenshot -- and this mod has a one-click map capture, so that is a real route out.
-        // Clearing the box is not "delete my key" either; Reset is, which is why this row has one.
-        apiKeyField.setHint(Component.literal(haveKey ? "saved - type to replace" : "not needed yet"));
-        apiKeyField.setResponder(v -> {
-            String t = v.trim();
-            if (!t.isEmpty()) cfg.earthMcApiToken = t;   // saved on close, not per keystroke
-        });
-        option("EarthMC API Key", apiKeyField,
-                () -> cfg.earthMcApiToken == null || cfg.earthMcApiToken.isBlank(),
-                () -> {
-                    cfg.earthMcApiToken = "";
-                    apiKeyField.setValue("");
-                });
 
         archiveField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("dd/mm/yyyy"));
         archiveField.setHint(Component.literal("dd/mm/yyyy"));

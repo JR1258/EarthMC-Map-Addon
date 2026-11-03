@@ -706,10 +706,8 @@ public class SquaremapApiClient {
      * transfer simply does not finish. squaremap has always offered gzip; we just never asked.
      */
     private String get(String url) {
-        // The player feed lives on EarthMC's API host rather than squaremap since 2026-11-03, so this
-        // helper now serves both and has to carry the key for the one and not the other.
-        boolean earthMcApi = url.startsWith(EarthMcApiClient.API_HOST);
-        if (earthMcApi && EarthMcApiClient.authBlocked()) return null;
+        // Serves two hosts since 2026-11-03: squaremap for claims and imagery, EarthMC's API host for
+        // the player feed that replaced tiles/players.json. Neither is authenticated.
         try {
             HttpRequest.Builder reqB = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -717,7 +715,6 @@ public class SquaremapApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET();
-            if (earthMcApi) EarthMcApiClient.attachToken(reqB, url);
             // "Only send it if it changed since the copy I already have." markers.json regenerates every
             // couple of minutes while we poll every 60s, so most polls come back 304 with an empty body
             // instead of 1.4 MB. The ETag must be the one from a gzipped response -- the server issues a
@@ -731,9 +728,6 @@ public class SquaremapApiClient {
             HttpRequest req = reqB.build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
             noteCachePolicy(url, resp);
-            // Only for EarthMC's own host: a 200 from squaremap says nothing about the key, and letting
-            // one clear a rejection would hide the reason the panels went empty.
-            if (earthMcApi) EarthMcApiClient.noteAuthStatus(resp.statusCode(), url);
             if (resp.statusCode() == 304) return NOT_MODIFIED;
             if (resp.statusCode() == 200) {
                 resp.headers().firstValue("ETag").ifPresent(tag -> etags.put(url, tag));

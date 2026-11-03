@@ -3533,13 +3533,14 @@ public class TownyMapMod implements ClientModInitializer {
         if (earthMcApi == null) return false;
         TownData clickedTown = apiClient == null ? null
                 : TownHoverOverlay.townAt(worldX, worldZ, apiClient.getTowns());
-        if (clickedTown == null) return false;
+        // Unclaimed ground goes to Xaero unless the player has asked for the old behaviour back.
+        if (clickedTown == null && (config == null || !config.wildernessTownInfo)) return false;
         armedMapDismiss = false;
         TownSearchOverlay.reset();   // right-clicking a new town clears any active search bar/result
-        String fallbackKey = townKey(clickedTown.name());
-        TownPopupData fallback = townDetailsCache.get(fallbackKey);
-        MapJumpTarget fallbackTarget =
-                new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
+        String fallbackKey = clickedTown == null ? "" : townKey(clickedTown.name());
+        TownPopupData fallback = clickedTown == null ? null : townDetailsCache.get(fallbackKey);
+        MapJumpTarget fallbackTarget = clickedTown == null ? null
+                : new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
         long lookupId = townLookupId.incrementAndGet();
         if (fallback != null) {
             showLookupResult(fallback, screenX, screenY, worldX, worldZ, fallbackTarget);
@@ -3553,7 +3554,10 @@ public class TownyMapMod implements ClientModInitializer {
         }
         TownPopupData cachedFallback = fallback;
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
-        earthMcApi.fetchTown(clickedTown.name()).thenAccept(data -> {
+        // By name when the claim is ours to name, by position otherwise -- the second only happens with
+        // wildernessTownInfo on, and is what answers "is this really unclaimed?" rather than assuming it.
+        (clickedTown != null ? earthMcApi.fetchTown(clickedTown.name())
+                             : earthMcApi.fetchTownAt(worldX, worldZ)).thenAccept(data -> {
             Minecraft client = Minecraft.getInstance();
             if (client == null) return;
             client.execute(() -> {

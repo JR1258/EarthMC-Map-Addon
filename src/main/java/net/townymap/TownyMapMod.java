@@ -1527,22 +1527,33 @@ public class TownyMapMod implements ClientModInitializer {
      * While our overlay is drawing we render waypoints ourselves on top of it, so Xaero's native
      * minimap waypoint pass is suppressed to avoid drawing each one twice.
      *
-     * <p>Deliberately mirrors the condition guarding our own redraw, including the cave-mode check:
-     * the overlay bails out in cave mode and never redraws, so suppressing there would make waypoints
-     * vanish entirely. (That asymmetry is a live bug on the 1.21.11 branch; fixed here rather than
-     * carried over.)
+     * <p>Every condition here mirrors one guarding our own redraw, because suppressing a pass we then
+     * decline to replace is precisely how waypoints disappear. Cave mode was mirrored from the start;
+     * the enlarged map and the "did we actually paint over anything" flag were not, so on the enlarged
+     * minimap, and whenever our layer drew nothing that frame, Xaero's waypoints were taken away and
+     * nothing put them back.
+     *
+     * <p>{@code lastRenderCoveredWaypoints()} replaces the old squaremapOnMinimap() test rather than
+     * joining it: it is the redraw's own signal, it is set by our draw earlier in the same frame
+     * (renderOnMinimap runs before renderOutsidePip, inside which this fires), and it is true for the
+     * chunk counter and for claim fills as well -- cases the old test missed, where each waypoint was
+     * being drawn twice instead.
      */
     public static void setSuppressNativeMinimapWaypoints(Object session) {
         boolean caveMode = false;
+        boolean enlarged = false;
         try {
             xaero.hud.minimap.module.MinimapSession minimapSession =
                     (xaero.hud.minimap.module.MinimapSession) session;
             caveMode = minimapSession.getProcessor() != null
                     && minimapSession.getProcessor().isCaveModeDisplayed();
+            enlarged = minimapSession.getProcessor() != null
+                    && minimapSession.getProcessor().isEnlargedMap();
         } catch (Exception ignored) {
         }
         suppressNativeMinimapWaypoints.set(config != null && config.minimapExtensionsEnabled
-                && config.squaremapOnMinimap() && isActiveOnCurrentServer() && !caveMode);
+                && isActiveOnCurrentServer() && !caveMode && !enlarged
+                && net.townymap.render.TownyMinimapOverlay.lastRenderCoveredWaypoints());
     }
 
     public static void clearSuppressNativeMinimapWaypoints() {
@@ -3520,50 +3531,42 @@ public class TownyMapMod implements ClientModInitializer {
         return d + " " + (m >= 1 && m <= 12 ? mon[m] : "?") + " " + y;
     }
 
-    public static void onMapRightClick(double worldX, double worldZ, int screenX, int screenY) {
-        if (!isActiveOnCurrentServer()) return;
-        if (earthMcApi == null) return;
+    /**
+     * Opens the town popup for a right-click on the map, and reports whether the click was ours.
+     *
+     * <p>False means we did nothing with it and the caller must leave it unconsumed, because Xaero's
+     * own right-click menu — add waypoint here, teleport, share location — is the only thing a
+     * right-click on unclaimed ground can usefully do, and that menu never opens if GuiMap.mouseClicked
+     * is cancelled out from under it. Claimed ground is ours; everything else is Xaero's. The test is
+     * the one the hover tooltip already uses, so the rule reads off the screen: right-click where a
+     * town name appears and you get the town, right-click bare map and you get Xaero's menu.
+     */
+    public static boolean onMapRightClick(double worldX, double worldZ, int screenX, int screenY) {
+        if (!isActiveOnCurrentServer()) return false;
+        if (earthMcApi == null) return false;
+        TownData clickedTown = apiClient == null ? null
+                : TownHoverOverlay.townAt(worldX, worldZ, apiClient.getTowns());
+        if (clickedTown == null) return false;
         armedMapDismiss = false;
         TownSearchOverlay.reset();   // right-clicking a new town clears any active search bar/result
-        TownData clickedTown = null;
-        TownPopupData fallback = null;
-        MapJumpTarget fallbackTarget = null;
-        String fallbackKey = "";
-        if (apiClient != null) {
-            TownData town = TownHoverOverlay.townAt(worldX, worldZ, apiClient.getTowns());
-            if (town != null) {
-                clickedTown = town;
-                fallbackKey = townKey(town.name());
-                fallback = townDetailsCache.get(fallbackKey);
-                fallbackTarget = new MapJumpTarget(town.name(), town.centerX(), town.centerZ());
-            }
-        }
+        String fallbackKey = townKey(clickedTown.name());
+        TownPopupData fallback = townDetailsCache.get(fallbackKey);
+        MapJumpTarget fallbackTarget =
+                new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
         long lookupId = townLookupId.incrementAndGet();
         if (fallback != null) {
             showLookupResult(fallback, screenX, screenY, worldX, worldZ, fallbackTarget);
             // Archive: the live API doesn't know these historical towns — keep the snapshot popup, never fetch.
-            if (isArchiveMode() || isTownDetailsFresh(fallbackKey)) return;
+            if (isArchiveMode() || isTownDetailsFresh(fallbackKey)) return true;
         } else if (isArchiveMode()) {
             TownInfoOverlay.dismiss();   // archived town with no seeded detail — nothing live to fall back to
-            return;
+            return true;
         } else {
             TownInfoOverlay.showLoading(screenX, screenY);
         }
         TownPopupData cachedFallback = fallback;
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
-        if (clickedTown != null) {
-            earthMcApi.fetchTown(clickedTown.name()).thenAccept(data -> {
-                Minecraft client = Minecraft.getInstance();
-                if (client == null) return;
-                client.execute(() -> {
-                    if (lookupId != townLookupId.get()) return;
-                    showLookupResult(data != null ? data : cachedFallback, screenX, screenY,
-                            worldX, worldZ, cachedFallbackTarget);
-                });
-            });
-            return;
-        }
-        earthMcApi.fetchTownAt(worldX, worldZ).thenAccept(data -> {
+        earthMcApi.fetchTown(clickedTown.name()).thenAccept(data -> {
             Minecraft client = Minecraft.getInstance();
             if (client == null) return;
             client.execute(() -> {
@@ -3572,6 +3575,7 @@ public class TownyMapMod implements ClientModInitializer {
                         worldX, worldZ, cachedFallbackTarget);
             });
         });
+        return true;
     }
 
     /**

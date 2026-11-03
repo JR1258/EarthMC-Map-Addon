@@ -96,6 +96,17 @@ public final class TownyMinimapOverlay {
     private static long cachedWaypointCollectAtMs;
     private static List<Waypoint> cachedMinimapWaypoints = List.of();
     private static boolean lastRenderCanCoverWaypoints;
+
+    /**
+     * Whether this frame's minimap draw actually painted over the terrain, and so over Xaero's
+     * waypoints with it.
+     *
+     * <p>Read by the native-waypoint suppression, which runs after our draw and before Xaero's. The two
+     * have to agree: suppressing a pass we then decline to replace is how waypoints disappear.
+     */
+    public static boolean lastRenderCoveredWaypoints() {
+        return lastRenderCanCoverWaypoints;
+    }
     /**
      * Blocks-per-block factor the minimap was actually drawn at this frame, for the waypoint layer.
      * 1.0 normally. In the Nether with "Overworld Coords" the town overlay and the squaremap tiles are

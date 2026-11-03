@@ -85,6 +85,11 @@ public class TownyMapConfigScreen extends Screen {
                     "Dim the map imagery so town borders and player dots stand out more."),
             Map.entry("World Map Overview",
                     "Allow zooming out past Xaero's normal limit to see the whole EarthMC map."),
+            Map.entry("Wilderness Town Info",
+                    "Right-click unclaimed ground to look it up and open the town panel, as it worked"
+                            + " before 1.4.11. Off, that click reaches Xaero's own menu instead, where"
+                            + " you can add a waypoint, teleport or share the location. Right-clicking"
+                            + " a claim opens the town panel either way."),
             Map.entry("Dark Buttons",
                     "Flat dark styling for the on-map buttons and this screen instead of vanilla textures."),
             Map.entry("Wilderness Player Alert",
@@ -312,6 +317,9 @@ public class TownyMapConfigScreen extends Screen {
         option("Far Zoom Town Dots", onOff(cfg.farZoomTownDots, v -> cfg.farZoomTownDots = v),
                 () -> cfg.farZoomTownDots == DEFAULTS.farZoomTownDots,
                 () -> cfg.farZoomTownDots = DEFAULTS.farZoomTownDots);
+        option("Wilderness Town Info", onOff(cfg.wildernessTownInfo, v -> cfg.wildernessTownInfo = v),
+                () -> cfg.wildernessTownInfo == DEFAULTS.wildernessTownInfo,
+                () -> cfg.wildernessTownInfo = DEFAULTS.wildernessTownInfo);
         option("Real Borders", cycle(cfg.borderOverlayMode, new int[]{0, 1, 2},
                         TownyMapConfigScreen::borderModeText, v -> cfg.borderOverlayMode = v),
                 () -> cfg.borderOverlayMode == DEFAULTS.borderOverlayMode,

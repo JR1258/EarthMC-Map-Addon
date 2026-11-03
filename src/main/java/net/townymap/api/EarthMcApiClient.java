@@ -39,13 +39,20 @@ public class EarthMcApiClient {
     private static final String BASE = "https://api.earthmc.net/v4";
 
     // ── API token ────────────────────────────────────────────────────────────
-    // EarthMC has said tokens are coming for every endpoint (20TB+ of API bandwidth in one month) but
-    // has not published the scheme yet, and there is no reachable spec to read. Bearer is the near
-    // universal convention, so that is the guess -- and it is a guess, which is why the header name and
-    // prefix are two constants here rather than spread through the call sites. If the announcement says
-    // something else, those two lines are the change.
+    // EarthMC requires a key on every endpoint from 2026-11-19 (announced 2026-11-03; free, via the
+    // in-game /api key create). Bearer was a guess when this was written and is now confirmed: their
+    // OpenAPI document marks /v4/events as BearerAuth, that being the one endpoint already keyed.
     private static final String AUTH_HEADER = "Authorization";
     private static final String AUTH_PREFIX = "Bearer ";
+    /**
+     * The host the key may be sent to.
+     *
+     * <p>Scoped to the host rather than to {@link #BASE}, because the live player feed moved to
+     * /map/v1/players -- same host and same key, but not under /v4, so a BASE check would have left it
+     * unauthenticated and quietly 401ing from the 19th. The trailing slash is what keeps this a host
+     * check: without it "api.earthmc.net.example.com" would match.
+     */
+    static final String API_HOST = "https://api.earthmc.net/";
     /** After a 401/403, stop asking for a while. A storm of rejected requests is the abuse the tokens
      *  exist to stop, and hammering through one would be the mod misbehaving by exactly that measure. */
     private static final long AUTH_BACKOFF_MS = 60_000L;
@@ -61,11 +68,11 @@ public class EarthMcApiClient {
      * Attaches the token, if one is set, and only to EarthMC's own API.
      *
      * <p>The host check is the point: this mod also talks to squaremap, mc-heads, an alliance host and
-     * GitHub, and a credential must never travel to any of them. {@code url} always starts with BASE
-     * today, so this is a guard against a later change rather than a live condition.
+     * GitHub, and a credential must never travel to any of them. Shared with {@link SquaremapApiClient},
+     * which polls the player feed on the same host and so needs the same key.
      */
-    private static void attachToken(HttpRequest.Builder req, String url) {
-        if (!url.startsWith(BASE)) return;
+    static void attachToken(HttpRequest.Builder req, String url) {
+        if (!url.startsWith(API_HOST)) return;
         var cfg = net.townymap.TownyMapMod.getConfig();
         if (cfg == null) return;
         String token = cfg.earthMcApiToken;
@@ -74,21 +81,31 @@ public class EarthMcApiClient {
     }
 
     /** Whether a call should be skipped because the API is currently refusing our credentials. */
-    private static boolean authBlocked() {
+    static boolean authBlocked() {
         return System.currentTimeMillis() < authBlockedUntilMs;
     }
 
     /** Records the outcome of a request so the UI can say why the overlay has gone quiet. */
-    private static void noteAuthStatus(int status, String url) {
+    static void noteAuthStatus(int status, String url) {
         if (status == 401 || status == 403) {
             authRejected = true;
             authBlockedUntilMs = System.currentTimeMillis() + AUTH_BACKOFF_MS;
             if (authLogged.compareAndSet(false, true)) {
                 var cfg = net.townymap.TownyMapMod.getConfig();
                 boolean have = cfg != null && cfg.earthMcApiToken != null && !cfg.earthMcApiToken.isBlank();
-                LOGGER.warn("[TownyMap] EarthMC API refused us (HTTP {}) -- {}. Set it under Settings ->"
-                        + " Advanced -> EarthMC API Key.", status,
-                        have ? "the API key we sent was not accepted" : "no API key is configured");
+                LOGGER.warn("[TownyMap] EarthMC API refused us (HTTP {}) -- {}. Run /api key create"
+                        + " in game, then paste the key under Settings -> Advanced -> EarthMC API Key.",
+                        status, have ? "the API key we sent was not accepted"
+                                     : "no API key is configured");
+                // Worth a line in chat, not just the log: from 2026-11-19 a missing key takes the
+                // player dots and every detail panel with it, and the only symptom is things being
+                // empty. Once per session -- authLogged is reset by the next accepted call.
+                net.townymap.TownyMapMod.sendFeedback(have
+                        ? "EarthMC rejected your API key. Run /api key create for a new one, then paste"
+                          + " it under Settings -> Advanced."
+                        : "EarthMC now needs an API key. Run /api key create, then paste it under"
+                          + " Settings -> Advanced -> EarthMC API Key.",
+                        net.minecraft.util.Formatting.RED);
             }
         } else if (status == 200) {
             authRejected = false;

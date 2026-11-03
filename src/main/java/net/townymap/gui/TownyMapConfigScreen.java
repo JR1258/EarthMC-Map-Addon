@@ -69,8 +69,9 @@ public class TownyMapConfigScreen extends Screen {
      *  are self-describing, so the strip simply stays empty rather than repeating the label back. */
     private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
             Map.entry("EarthMC API Key",
-                    "Your personal EarthMC API key, sent only to api.earthmc.net. Leave blank until"
-                            + " EarthMC starts requiring one. A saved key is never shown again."),
+                    "Your personal EarthMC API key, sent only to api.earthmc.net. Required from"
+                            + " November 19 for player dots and town details: run /api key create in"
+                            + " game to get one. A saved key is never shown again."),
             Map.entry("EarthMC Only",
                     "Only run on EarthMC. Turn off to use the overlay on any server."),
             Map.entry("EarthMC Map In Nether",

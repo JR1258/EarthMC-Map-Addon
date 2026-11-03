@@ -590,7 +590,7 @@ public abstract class MixinGuiMap {
      * only JDK types on purpose: xaero.lib is not on our compile classpath, and the descriptors naming
      * it here are plain strings.
      */
-    @Redirect(require = 0, remap = false, method = "extractRenderState",
+    @Redirect(require = 0, remap = false, method = "method_25394",
             slice = @Slice(
                     from = @At(value = "FIELD", opcode = Opcodes.GETSTATIC,
                             target = "Lxaero/map/common/config/option/WorldMapProfiledConfigOptions;"
@@ -610,12 +610,17 @@ public abstract class MixinGuiMap {
      * map without them. Their coordinates belong to the player's world, so on the Moon they would mark
      * lunar ground the player has never stood on.
      */
-    @Redirect(require = 0, remap = false, method = "extractRenderState",
+    @Redirect(require = 0, remap = false, method = "method_25394",
             at = @At(value = "INVOKE",
                     // Name only, no descriptor: the full one names Minecraft types, which are
                     // intermediary at runtime under Fabric's remapped mappings, so a literal
                     // remap = false descriptor would silently never match there. checkWaypoints has a
                     // single overload, so the name resolves it on every branch.
+                    //
+                    // The enclosing method is named by the same rule, and these three redirects spent
+                    // several releases carrying the 26.x name instead: under remap = false nothing
+                    // maps it, nothing on this branch is called extractRenderState, and require = 0
+                    // means a redirect that matches nothing is not an error. They simply never ran.
                     target = "Lxaero/map/mods/SupportXaeroMinimap;checkWaypoints"))
     private void townymap$skipWaypointsOffWorld(
             xaero.map.mods.SupportXaeroMinimap support, boolean enabled,
@@ -631,7 +636,7 @@ public abstract class MixinGuiMap {
      * this returns non-null, so null is all that is needed -- it names the waypoint set of a world the
      * map is not showing, which was the confusing part.
      */
-    @Redirect(require = 0, remap = false, method = "extractRenderState",
+    @Redirect(require = 0, remap = false, method = "method_25394",
             at = @At(value = "INVOKE",
                     target = "Lxaero/map/mods/SupportXaeroMinimap;"
                            + "getSubWorldNameToRender()Ljava/lang/String;"))

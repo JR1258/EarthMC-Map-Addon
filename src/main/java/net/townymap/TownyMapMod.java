@@ -36,6 +36,7 @@ import net.townymap.model.TownData;
 import net.townymap.model.TownPopupData;
 import net.townymap.render.TownyMinimapOverlay;
 import net.townymap.render.WorldMapRenderer;
+import net.townymap.render.WorldMapWaypoints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xaero.hud.minimap.common.config.MinimapConfigConstants;
@@ -1253,6 +1254,28 @@ public class TownyMapMod implements ClientModInitializer {
     public static void suppressNextPanClear() {
         suppressNextPanClear = true;
     }
+
+    /**
+     * Xaero's own waypoints, redrawn over our map layer.
+     *
+     * <p>Called from the renderPreDropdown pass with XAERO's camera and scale, not the overlay's: the
+     * waypoint coordinates are in Xaero's map space already. See {@link WorldMapWaypoints} for why
+     * redrawing is the only option.
+     */
+    public static void renderWorldMapWaypoints(DrawContext ctx, double cameraX, double cameraZ,
+                                               double guiScale, int screenW, int screenH) {
+        if (!isActiveOnCurrentServer()) return;
+        try {
+            WorldMapWaypoints.render(ctx, cameraX, cameraZ, guiScale, screenW, screenH);
+        } catch (Exception | LinkageError e) {
+            // One-shot: a throw here must not take the map's whole late pass down with it.
+            if (worldMapWaypointsErrorLogged.compareAndSet(false, true)) {
+                LOGGER.warn("[TownyMap] Failed to redraw world-map waypoints", e);
+            }
+        }
+    }
+
+    private static final AtomicBoolean worldMapWaypointsErrorLogged = new AtomicBoolean(false);
 
     public static void renderOnWorldMap(DrawContext ctx,
                                         double cameraX, double cameraZ,

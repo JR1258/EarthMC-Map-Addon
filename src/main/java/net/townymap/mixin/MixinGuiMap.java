@@ -34,16 +34,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Injects into Xaero's GuiMap.
  *
- * Rendering order, and why the two render injects sit where they do:
- *   1. method_25394 — Xaero composites its own terrain out of the scale framebuffer
- *   2. onBeforeMapElements — our squaremap layer and town overlay, then the deferred flush
- *   3. method_25394 — Xaero's map elements: tracked players, WAYPOINTS, footsteps, arrow
- *   4. renderPreDropdown HEAD — our player dots, our arrow and the info UI, over everything
+ * What governs layering here is NOT the order of these injects. Everything we draw goes through
+ * DrawContext, which records into GuiRenderState and is composited after the whole screen
+ * render; everything Xaero draws goes through XaeroBufferProvider.endBatch, which uploads and renders
+ * on the spot. So our layer covers Xaero's terrain, its map elements and its waypoints alike, from any
+ * injection point in method_25394. Moving an inject earlier or later cannot change that, and a
+ * 1.4.11 attempt to fix the buried waypoints that way achieved nothing.
  *
- * Step 2 has to stay between 1 and 3. It covers Xaero's terrain, which is the point, and it must
- * not cover Xaero's elements, which it did for every release up to 1.4.10: the inject was anchored
- * on the ARROW config read, which comes after the element pass, so the opaque fill that opens
- * renderSquaremapBackground buried every waypoint on the map.
+ * Anything of Xaero's that has to stay visible under our layer must therefore be drawn again by us,
+ * through ctx, in the renderPreDropdown pass. That is what the player arrow has always done, what the
+ * minimap does for its waypoints, and what WorldMapWaypoints now does for the world map's.
  *
  * method_25402 = mouseClicked(Click, boolean) in MC 1.21.11.
  */
@@ -77,6 +77,13 @@ public abstract class MixinGuiMap {
      */
     @Shadow(remap = false) private boolean shouldResetCameraPos;
 
+    /**
+     * Whatever map element of Xaero's the cursor was over on the last frame it drew -- a waypoint, a
+     * tracked player. Xaero keeps it for exactly this purpose: mouseClicked copies it into
+     * viewedOnMousePress and the right-click menu is built from it.
+     */
+    @Shadow(remap = false) private xaero.map.element.HoveredMapElementHolder<?, ?> viewed;
+
     @Shadow(remap = false) private double cameraX;
     @Shadow(remap = false) private double cameraZ;
     @Shadow(remap = false) private double scale;
@@ -103,37 +110,29 @@ public abstract class MixinGuiMap {
                 : original;
     }
 
-    // ── The squaremap layer, under Xaero's map elements ──────────────────────
+    // ── All overlay rendering in one pass ───────────────────────────────
 
     /**
-     * Draws our map surface, anchored on the static read that opens
-     * {@code WorldMap.trackedPlayerRenderer.update(mc)} — the last statement before Xaero renders its
-     * map elements.
+     * Draws our map surface, anchored on the ARROW config read, late in method_25394.
      *
-     * <p>The position is the fix, not an arbitrary foothold. Xaero has finished compositing its terrain
-     * by here, so our layer still hides it; its waypoints, tracked players and footsteps have not been
-     * drawn yet, so they land on top of us rather than underneath. The old anchor, the ARROW config read,
-     * sat after the element pass: the arrow survived because Xaero draws it later still, and the
-     * waypoints did not.
-     *
-     * <p>A GETSTATIC of a xaero.map field on purpose. It names no Minecraft type, so the descriptor
-     * matches on this branch too, where a literal MC type under remap = false would silently never
-     * match against the intermediary names at runtime; and it occurs exactly once in GuiMap on every
-     * Xaero from 1.41.2 through 1.47.2, always as the statement immediately before
-     * MapElementRenderHandler.render.
+     * <p>1.4.11 briefly moved this to just before Xaero's map-element pass, expecting that to let its
+     * waypoints land on top. It could not, for the reason in this class's header. What the move did
+     * change is that our deferred flush and depth-test disable began running BEFORE Xaero's element
+     * pass rather than after it -- no benefit, and our GL fiddling newly upstream of code that had
+     * never run after it. Back where it was.
      */
     @Inject(require = 0,
             method = "method_25394",
             at = @At(
                     value = "FIELD",
-                    target = "Lxaero/map/WorldMap;trackedPlayerRenderer:"
-                           + "Lxaero/map/radar/tracker/PlayerTrackerMapElementRenderer;",
+                    target = "Lxaero/map/common/config/option/WorldMapProfiledConfigOptions;ARROW:"
+                           + "Lxaero/lib/common/config/option/BooleanConfigOption;",
                     opcode = Opcodes.GETSTATIC,
                     shift = At.Shift.BEFORE
             ),
             remap = false
     )
-    private void onBeforeMapElements(DrawContext ctx, int mouseX, int mouseY,
+    private void onBeforePlayerArrow(DrawContext ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {
         // Clear the search bar when the map is reopened (new GuiMap instance) or panned. Tracked on the
         // raw camera every frame, regardless of dimension. jumpTo() suppresses the next pan-clear so that
@@ -209,13 +208,23 @@ public abstract class MixinGuiMap {
             MinecraftClient mc = MinecraftClient.getInstance();
             int w = mc.getWindow().getScaledWidth();
             int h = mc.getWindow().getScaledHeight();
-            // Player dots here (not in the tile batch of onBeforeMapElements): the tiles are already flushed,
+            // Player dots here (not in the tile batch of onBeforePlayerArrow): the tiles are already flushed,
             // so the dots render on top of them and stop "blinking" behind async tile rebuilds at zoom-out.
             double dimMul = TownyMapMod.worldMapOverlayScale();
             if (dimMul > 0.0) {
                 double guiScale = (screenScale > 0) ? scale / screenScale : scale;
                 double mapScale = guiScale / dimMul;
                 TownyMapMod.renderWorldMapLatePass(ctx, cameraX * dimMul, cameraZ * dimMul, mapScale, w, h);
+            }
+            // Xaero's waypoints, over our layer. Xaero draws them into its own vertex buffers, which are
+            // flushed during this render call, while everything we draw is recorded into GuiRenderState
+            // and composited after it -- so our layer covers them wherever it is injected, and the only
+            // way they survive is for us to draw them too. Xaero's own camera and scale: the waypoint
+            // coordinates are in that space, and re-deriving them through the overlay's would only be a
+            // chance to get it wrong.
+            double xaeroScale = (screenScale > 0) ? scale / screenScale : scale;
+            if (xaeroScale > 0.0) {
+                TownyMapMod.renderWorldMapWaypoints(ctx, cameraX, cameraZ, xaeroScale, w, h);
             }
             // A clean map screenshot skips our own chrome for the frame, so the capture is just the map.
             if (!TownyMapMod.hideChromeForScreenshot()) {
@@ -239,18 +248,18 @@ public abstract class MixinGuiMap {
     //
     // Layering requirement: the arrow must sit ABOVE the squaremap tiles but BELOW
     // our UI panels (search bar, town info, toggles).  The chronology in
-    // method_25394 is: onBeforeMapElements (tiles drawn + drawDeferredElements
+    // method_25394 is: onBeforePlayerArrow (tiles drawn + drawDeferredElements
     // flush) → renderPreDropdown (our overlays) → RETURN.  Drawing the arrow here,
     // before the UI panels, queues it into the deferred batch ahead of them, so the
     // arrow renders under the UI; and since the tiles were already flushed in
-    // onBeforeMapElements, the arrow still renders on top of the tiles.
+    // onBeforePlayerArrow, the arrow still renders on top of the tiles.
     //
     // (Previously this drew at method_25394 RETURN, which queued the arrow AFTER the
     // UI panels — making the arrow draw over the search box.)
     /**
      * Applies a pending world-switch recentre.
      *
-     * <p>Called from both injects on purpose. onBeforeMapElements anchors on a field access in
+     * <p>Called from both injects on purpose. onBeforePlayerArrow anchors on a field access in
      * extractRenderState, and that anchor has silently stopped matching across Xaero updates before;
      * renderPreDropdown is the anchor the whole overlay already depends on, so if the map is drawing at
      * all this one runs. consumeWorldMapRecentre() clears itself, so whichever fires first wins.
@@ -492,6 +501,13 @@ public abstract class MixinGuiMap {
                 return;                                             // click turns into a pan-drag (keeps it)
             }
             if (button != 1) return;
+
+            // A right-click on one of Xaero's own map elements belongs to Xaero. Its waypoint menu --
+            // edit, delete, teleport, share -- is only opened from mouseReleased, and only if
+            // mouseClicked ran far enough to set rightMouseButton.isDown, so consuming the click here is
+            // what left waypoints standing on claimed land looking inert: the town panel opened instead
+            // and the waypoint could not be touched at all.
+            if (viewed != null && viewed.isRightClickValid()) return;
 
             double[] world = overlayWorldFromScreen(click.x(), click.y(), sw, sh);
             if (world == null) return;

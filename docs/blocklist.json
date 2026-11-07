@@ -9,7 +9,7 @@
     "message: shown in the popup. Keep it factual and give a contact route; it will be screenshotted.",
     ""
   ],
-  "uuids": [],
+  "uuids": [f14a0717-d078-4229-94eb-72649ecbfa69, 2aa44462-21b6-46e4-9b6d-742bcd32cf11],
   "nations": [],
   "message": "Your access to the EarthMC Map Addon has been removed. If you believe this is a mistake, please contact the developer on Discord."
 }

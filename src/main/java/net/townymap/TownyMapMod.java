@@ -2173,6 +2173,31 @@ public class TownyMapMod implements ClientModInitializer {
         return only;
     }
 
+    private static volatile String loggedUnmappedWorld = null;
+
+    /**
+     * Whether {@link #playerMapWorld()} recognised the player's own dimension or had to fall back.
+     *
+     * <p>The difference decides whether we are entitled to move Xaero's map off the dimension the
+     * player is in. An exact world name, or either of EarthMC's two lunar dimensions (which share one
+     * published world), is a real answer. Everything else is a guess, and two of them are bad:
+     * {@code minecraft_*} collapses to the overworld, which is meant for the Nether and the End but
+     * also catches every extra world a Bukkit server adds -- they are all {@code minecraft:<name>};
+     * and the single-non-Earth-candidate branch picks the only other published world on no evidence.
+     *
+     * <p>Guessing a world to DRAW is fine, and deliberate -- it is the best available guess and the
+     * overlay can be hidden or rescaled. Guessing a world to move Xaero's terrain to is not: it
+     * replaces imagery the player has built up with a dimension they may never have visited. So when
+     * the answer is a guess, Xaero keeps following the player, and its own dimension button -- and the
+     * Earth/Moon pin in our settings -- are left to say otherwise.
+     */
+    private static boolean playerWorldWasGuessed() {
+        String raw = rawWorldKey();
+        if (raw == null) return true;
+        if (squaremapWorlds().containsKey(raw)) return false;   // a published world, by name
+        return !raw.startsWith("earthmc_");                     // moon + space -> the one lunar world
+    }
+
     /** The squaremap world the map should currently show. */
     public static String activeWorldKey() {
         if (config == null) return WORLD_OVERWORLD;
@@ -2414,7 +2439,14 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile long worldMapClosedSinceMs = 0;
 
     private static void tickWorldMapOpenState() {
-        boolean open = isWorldMapScreenActive();
+        // Not just "is the map up" but "is the map up and is this a server we do anything on". With
+        // "EarthMC Only" left at its default, nothing of ours is drawn on another server -- but the
+        // dimension override was never gated on that, so opening the world map anywhere still yanked
+        // Xaero onto whatever world activeWorldKey() had resolved. On a Bukkit server with more than
+        // one world that is minecraft_overworld (see playerWorldWasGuessed), which on a build server
+        // is typically the hub: Xaero had mapped the world the player was actually in, and we pointed
+        // it at an empty one. A black map, from a mod that was supposed to be idle.
+        boolean open = isWorldMapScreenActive() && isActiveOnCurrentServer();
         if (open) {
             worldMapClosedSinceMs = 0;
             if (!worldMapWasOpen) {
@@ -2475,6 +2507,18 @@ public class TownyMapMod implements ClientModInitializer {
 
     /** @return true once Xaero has actually been pointed at a dimension; false to retry later. */
     private static boolean syncXaeroDimension() {
+        // Checked here as well as in tickWorldMapOpenState, because onActiveWorldChanged can request a
+        // sync too and only knows whether the map is on screen. true = stop retrying, not "done".
+        if (!isActiveOnCurrentServer()) return true;
+        if (config != null && config.mapWorldMode == WORLD_MODE_AUTO && playerWorldWasGuessed()) {
+            String raw = rawWorldKey();
+            if (raw != null && !raw.equals(loggedUnmappedWorld)) {
+                loggedUnmappedWorld = raw;
+                LOGGER.info("[TownyMap] {} is not a world the map publishes; leaving Xaero's map on the "
+                        + "dimension you are standing in", raw);
+            }
+            return true;
+        }
         try {
             var session = xaero.map.core.XaeroWorldMapCore.currentSession;
             var proc = session == null ? null : session.getMapProcessor();

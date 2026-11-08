@@ -39,11 +39,15 @@ public class EarthMcApiClient {
     private static final String BASE = "https://api.earthmc.net/v4";
 
     // No API key handling here on purpose. EarthMC announced on 2026-11-03 that keys would be required
-    // from the 19th, and the groundwork written then has been taken out again: their published docs
-    // still describe a key as optional, nothing on the API answers 401 or 403 yet, and a settings field
-    // plus a chat warning that cannot fire is noise for every user. What goes back in when it is needed:
-    // an "Authorization: Bearer <key>" header (their documented format), a host check so the key reaches
-    // api.earthmc.net and none of the other hosts this mod talks to, and a 401/403 backoff.
+    // from the 19th, and the groundwork written then has been taken out again, because nothing published
+    // has ever carried that requirement. Re-checked on 2026-11-07 against their own OpenAPI document at
+    // https://api.earthmc.net/docs: /v4/events is the ONLY operation that declares BearerAuth, and the
+    // three this mod uses -- POST /v4/towns, /v4/nations, /v4/players -- each say "optionally include API
+    // key". Nothing here answers 401 or 403, so a settings field and a chat warning that cannot fire
+    // would be noise for every user. What goes back in if that changes: an "Authorization: Bearer <key>"
+    // header (their documented format), a host check so the key reaches api.earthmc.net and none of the
+    // other hosts this mod talks to, and a 401/403 backoff. The spec above is the thing to re-read: it
+    // also carries the per-endpoint cooldowns, none of which touch the endpoints used here.
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMM d yyyy");

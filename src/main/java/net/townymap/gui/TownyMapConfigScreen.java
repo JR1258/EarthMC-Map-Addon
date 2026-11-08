@@ -864,8 +864,9 @@ public class TownyMapConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        // The API key field writes into the config as you type but does not save per keystroke, so the
-        // one write happens here. Every other control saves itself, which makes this a no-op for them.
+        // Every control saves itself as it is changed, so this is normally a no-op. It stays as the
+        // backstop for anything that edits the config without saving -- which the API key field used to
+        // be, writing per keystroke and saving only here, before that setting was removed.
         cfg.save();
         this.minecraft.setScreen(parent);
     }

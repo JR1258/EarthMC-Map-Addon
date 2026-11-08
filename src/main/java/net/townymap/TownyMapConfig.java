@@ -232,9 +232,11 @@ public class TownyMapConfig {
      * Live player positions.
      *
      * <p>Not a squaremap document any more: EarthMC replaced tiles/players.json with this endpoint on
-     * 2026-11-03. Same marker fields, so the parser is unchanged, but it sits on the API host and so
-     * needs an API key from 2026-11-19 -- which is why it is a fixed URL rather than hanging off
-     * {@code squaremapBaseUrl}. Pointing it at another host would send the key there.
+     * 2026-11-03. Same marker fields, so the parser is unchanged, but it lives on the API host rather
+     * than the map's, which is why it is a fixed URL instead of hanging off {@code squaremapBaseUrl}:
+     * a base-URL setting pointed somewhere else must not redirect requests meant for EarthMC's API, and
+     * if a key is ever needed here it must not be the thing that follows them. (As of 2026-11-07 no key
+     * is: see the note in EarthMcApiClient.)
      */
     public static final String PLAYERS_URL = "https://api.earthmc.net/map/v1/players";
 

@@ -1309,9 +1309,13 @@ public final class TownSearchOverlay {
             if (api != null) rosterTown = api.townOfResident(selectedName);
             if (rosterTown != null) {
                 lines.add(InfoRow.link("§7Town: §f", rosterTown, "town"));
-                String rosterNation = api.getTownNation(rosterTown.toLowerCase(Locale.ROOT));
+                String rosterKey = rosterTown.toLowerCase(Locale.ROOT);
+                String rosterNation = api.getTownNation(rosterKey);
                 if (rosterNation != null && !rosterNation.isBlank()) {
-                    lines.add(InfoRow.link("§7Nation: §f", rosterNation, "nation"));
+                    // Same shape as the API-backed card above: the capital is said in the label, so the
+                    // value stays the nation's own name and the link still resolves to it.
+                    String label = api.isTownCapital(rosterKey) ? "§7Capital of: §f" : "§7Nation: §f";
+                    lines.add(InfoRow.link(label, rosterNation, "nation"));
                 }
                 lines.add(InfoRow.text("§8From map data (not on the API)"));
             } else {

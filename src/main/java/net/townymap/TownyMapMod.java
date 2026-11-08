@@ -946,13 +946,18 @@ public class TownyMapMod implements ClientModInitializer {
         return m.get(nationBare.toLowerCase(Locale.ROOT));
     }
 
-    /** A town's nation name with any "Capital of " prefix stripped, for matching against alliance rosters. */
+    /**
+     * A town's nation by town NAME rather than key, for the alliance layers.
+     *
+     * <p>It used to strip a "Capital of " prefix as well, because the squaremap tooltip's nation was
+     * stored in that form and a capital matched no alliance roster. The prefix is now split off at the
+     * parse (see SquaremapApiClient.POPUP_NATION), so every caller gets the plain name and this is only
+     * the name-keyed convenience.
+     */
     public static String bareTownNation(String townName) {
         if (apiClient == null || townName == null) return null;
         String n = townNationAt(townKey(townName));
-        if (n == null) return null;
-        if (n.regionMatches(true, 0, "Capital of ", 0, 11)) n = n.substring(11);
-        return n.trim();
+        return n == null ? null : n.trim();
     }
 
     /** Loads the alliance/meganation data if the cache is missing or stale (5 min). Called every frame the
@@ -3052,7 +3057,7 @@ public class TownyMapMod implements ClientModInitializer {
             boolean arch = isArchiveMode();
             TownHoverOverlay.render(ctx, mouseX, mouseY, screenW, screenH, town, details,
                     arch ? null : apiClient.getTownMayor(key),
-                    arch ? archiveNationLabel(town, details) : apiClient.getTownNation(key));
+                    arch ? archiveNationLabel(town, details) : apiClient.getTownNationLabel(key));
         }
     }
 

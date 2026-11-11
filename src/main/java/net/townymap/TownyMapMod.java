@@ -366,6 +366,17 @@ public class TownyMapMod implements ClientModInitializer {
     /**
      * Your own EarthMC record, for the dashboard's town/nation card. Reuses the same cache the pending
      * claim tracker fills, so in most sessions it is already there; otherwise one lookup for one name.
+     *
+     * <p>The lookup goes through {@link #requestPlayerDetails}, which is the only reason this is safe to
+     * call from where it is called. Every caller sits on a per-frame path -- isAccessBlocked() reaches
+     * it from the minimap's own render, and the dashboard calls it while it draws -- and the bare
+     * fetchPlayer that used to be here had no in-flight guard, no failure backoff and no negative
+     * caching, so for as long as the record was missing it posted to /players once per frame. A fast
+     * reply filled the cache within a few frames and hid that; a slow one let the burst cross EarthMC's
+     * 180/min limit, after which every reply was a 429, nothing was ever cached, the record never
+     * arrived and the loop sustained itself at full frame rate. A heap dump caught 3.2 million queued
+     * lookups holding a 5 GiB heap at 100%. requestPlayerDetails already carries the in-flight set and
+     * the failure backoff every other player lookup uses; this just stops going around it.
      */
     public static EarthMcPlayerData selfPlayer() {
         Minecraft client = Minecraft.getInstance();
@@ -373,9 +384,7 @@ public class TownyMapMod implements ClientModInitializer {
         String selfName = client.getUser().getName();
         EarthMcPlayerData cached = playerDetailsCache.get(townKey(selfName));
         if (cached == null && earthMcApi != null && isActiveOnCurrentServer()) {
-            earthMcApi.fetchPlayer(selfName).thenAccept(d -> {
-                if (d != null) cachePlayerDetails(townKey(selfName), d);
-            });
+            requestPlayerDetails(selfName);
         }
         return cached;
     }
@@ -3716,6 +3725,16 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile boolean blockedNoticeShown = false;
 
     /**
+     * How often the access check may re-run. Every caller of {@link #isAccessBlocked()} is a render
+     * path -- the minimap draws through it on every frame -- while its inputs are your uuid, fixed for
+     * the session, and your nation, which arrives once. Re-running it per frame bought nothing and put
+     * the whole check, {@link #selfPlayer()} included, on the frame budget. Twice a second still picks
+     * the nation up as soon as the record lands.
+     */
+    private static final long ACCESS_EVAL_INTERVAL_MS = 2000L;
+    private static volatile long accessEvaluatedAt = 0L;
+
+    /**
      * Whether this player is barred from the mod's features.
      *
      * <p>Fetched once per launch and matched on UUID, or on the player's nation. Fails open at every
@@ -3731,7 +3750,15 @@ public class TownyMapMod implements ClientModInitializer {
                 evaluateAccess();
             });
         }
-        if (!blocklist.isEmpty() && !accessBlocked) evaluateAccess();
+        // A uuid match is settled by the first evaluation; a nation match needs your own record, which
+        // is fetched asynchronously, so this has to keep looking -- just not on every frame.
+        if (!blocklist.isEmpty() && !accessBlocked) {
+            long now = System.currentTimeMillis();
+            if (now - accessEvaluatedAt >= ACCESS_EVAL_INTERVAL_MS) {
+                accessEvaluatedAt = now;
+                evaluateAccess();
+            }
+        }
         return accessBlocked;
     }
 

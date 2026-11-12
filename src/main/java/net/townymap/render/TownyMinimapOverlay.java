@@ -1539,8 +1539,10 @@ public final class TownyMinimapOverlay {
         if (config == null || !config.minimapExtensionsEnabled) return;
         if (session.getProcessor().isCaveModeDisplayed()) return;
         // Which background the user wants the indicator over. Xaero draws its own arrow before our
-        // overlay, so with the EMC layer on it's hidden and ours is the only one; with the layer off
-        // ours lands on top of Xaero's, matching its sprite and scale, so they read as one arrow.
+        // overlay, so with the EMC layer on it's hidden and ours is the only one. With the layer off
+        // Xaero's arrow is visible and ours is laid over it, matching its sprite and scale so the two
+        // read as one -- which is why mode 1 is the default and that second case is opt-in: being an
+        // exact copy is the best it can do, and anything less shows up as two arrows.
         boolean emcLayer = config.squaremapOnMinimap();
         switch (config.minimapIndicatorMode) {
             case 0 -> { return; }

@@ -530,6 +530,28 @@ public abstract class MixinGuiMap {
         }
     }
 
+    /**
+     * The search bar's hint/history stack scrolls on the wheel.
+     *
+     * <p>Cancels only when the overlay says the cursor was on the stack; every other wheel event falls
+     * through to Xaero, which zooms the map. Swallowing one near the middle of the screen for any other
+     * reason would make the map feel broken.
+     */
+    @Inject(require = 0, method = "mouseScrolled", at = @At("HEAD"), remap = false, cancellable = true)
+    private void onMouseScrolled(double mouseX, double mouseY, double horizontal, double vertical,
+                                 CallbackInfoReturnable<Boolean> cir) {
+        if (TownyMapMod.isAccessBlocked()) return;   // let Xaero handle it as if we were not installed
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            int sw = mc.getWindow().getGuiScaledWidth();
+            if (TownyMapMod.onTownSearchScroll(mouseX, mouseY, vertical, sw)) {
+                cir.setReturnValue(true);
+            }
+        } catch (Exception e) {
+            logOnce(CLICK_ERROR_LOGGED, "Failed to handle Xaero world-map scroll", e);
+        }
+    }
+
     @Inject(require = 0, method = "keyPressed", at = @At("HEAD"), remap = false, cancellable = true)
     private void onKeyPressed(KeyEvent input,
                               CallbackInfoReturnable<Boolean> cir) {

@@ -233,6 +233,21 @@ public class DetailScreen extends Screen {
      * Berlin above Bergamo_Nuovo rather than whichever the underlying list happened to hold first.
      * Towns edge out nations, which edge out players, at equal quality.
      */
+    /**
+     * A hit opened from this screen's search box joins the same history the map's search bar keeps, so
+     * the two surfaces share one list. Only here, not inside {@code openDetail}: following a link from
+     * one page to the next is browsing, and recording it would bury what you actually searched for.
+     */
+    private void rememberSearchHit(Ref ref) {
+        String kind = switch (ref.kind()) {
+            case TOWN -> "town";
+            case NATION -> "nation";
+            case PLAYER -> "player";
+            default -> null;         // alliances and the stats pages have nowhere on the map to go back to
+        };
+        if (kind != null) TownyMapMod.rememberSearch(kind, ref.name());
+    }
+
     private void recomputeSearch() {
         searchHits.clear();
         String q = searchQuery.trim().toLowerCase(java.util.Locale.ROOT);
@@ -314,6 +329,7 @@ public class DetailScreen extends Screen {
             if ((k == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || k == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER)
                     && !searchHits.isEmpty()) {
                 Ref best = searchHits.get(0);
+                rememberSearchHit(best);
                 TownyMapMod.openDetail(best.kind(), best.name(), this);
                 return true;
             }
@@ -708,6 +724,7 @@ public class DetailScreen extends Screen {
         for (int i = 0; i < searchHits.size() && i < searchRects.length; i++) {
             if (!within(searchRects[i], tabMx, tabMy)) continue;
             Ref ref = searchHits.get(i);
+            rememberSearchHit(ref);
             TownyMapMod.openDetail(ref.kind(), ref.name(), this);
             return true;
         }

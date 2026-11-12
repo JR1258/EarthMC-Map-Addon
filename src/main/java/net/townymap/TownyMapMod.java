@@ -2312,7 +2312,10 @@ public class TownyMapMod implements ClientModInitializer {
      */
     private static void tickWorldMapInjectHealth() {
         if (warnedInjectsDead) return;
-        if (!isWorldMapScreenActive()) { mapOpenSinceMs = 0; return; }
+        // isWorldMapOpen(), not isWorldMapScreenActive(): the latter counts Xaero's settings and
+        // waypoint dialogs as the map, and only GuiMap runs our injects. Sitting in Xaero's own
+        // world-map options for two seconds used to be enough to be told Xaero was incompatible.
+        if (!isWorldMapOpen()) { mapOpenSinceMs = 0; return; }
         long now = System.currentTimeMillis();
         if (mapOpenSinceMs == 0) mapOpenSinceMs = now;
         // Give the screen two seconds to draw a frame before judging it.
@@ -2417,11 +2420,13 @@ public class TownyMapMod implements ClientModInitializer {
      * is up", and treating a hop into settings as a close would release and re-apply the dimension
      * override, each of which pauses Xaero's writer and moves a FileLock.
      */
+    /** Any of Xaero's world-map screens, the map itself or one of its settings/waypoint dialogs. */
     private static boolean isWorldMapScreenActive() {
         MinecraftClient client = MinecraftClient.getInstance();
         return client != null && client.currentScreen != null
                 && client.currentScreen.getClass().getName().startsWith("xaero.map.gui.");
     }
+
 
     private static volatile long worldMapClosedSinceMs = 0;
 

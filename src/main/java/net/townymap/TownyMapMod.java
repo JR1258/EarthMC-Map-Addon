@@ -752,6 +752,11 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile boolean allianceLoading = false;
     private static volatile long allianceLoadedMs = 0;
     private static volatile int allianceDataVersion = 0;
+    private static final long ALLIANCE_REFRESH_MS = 300_000L;
+    private static final long ALLIANCE_RETRY_MIN_MS = 30_000L;
+    private static final long ALLIANCE_RETRY_MAX_MS = 600_000L;
+    /** How long to wait after a failed load, doubling each time it keeps failing. */
+    private static volatile long allianceRetryMs = ALLIANCE_RETRY_MIN_MS;
     private static volatile Map<String, int[]> megaByNation = Map.of();       // nation(lower) → {outline,fill}
     private static volatile Map<String, int[]> allianceByNation = Map.of();
     private static volatile Map<String, List<String>> megaNamesByNation = Map.of();     // nation → meganation labels
@@ -974,11 +979,20 @@ public class TownyMapMod implements ClientModInitializer {
         return n == null ? null : n.trim();
     }
 
-    /** Loads the alliance/meganation data if the cache is missing or stale (5 min). Called every frame the
-     *  map is open so the map modes, town menus and nation search always have it; self-throttles. */
+    /**
+     * Loads the alliance/meganation data if the cache is missing or stale. Called every frame the map is
+     * open so the map modes, town menus and nation search always have it; self-throttles.
+     *
+     * <p>The wait applies whether the last attempt worked or not. It used to be conditional on already
+     * having data, which meant a failed load left the throttle disengaged: the next frame tried again,
+     * and the next, for as long as the source stayed down. A profile log caught 209 requests in 18
+     * seconds doing exactly that -- fast enough to be what got us refused in the first place, after
+     * which every reply was a refusal and the loop sustained itself.
+     */
     public static void ensureAllianceData() {
         if (allianceLoading) return;
-        if (allianceDataVersion > 0 && System.currentTimeMillis() - allianceLoadedMs < 300_000L) return;
+        long wait = allianceDataVersion > 0 ? ALLIANCE_REFRESH_MS : allianceRetryMs;
+        if (allianceLoadedMs > 0 && System.currentTimeMillis() - allianceLoadedMs < wait) return;
         allianceLoading = true;
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             List<net.townymap.api.AllianceClient.Alliance> list = allianceClient.fetch();
@@ -986,7 +1000,13 @@ public class TownyMapMod implements ClientModInitializer {
             Runnable apply = () -> {
                 allianceLoading = false;
                 allianceLoadedMs = System.currentTimeMillis();
-                if (list.isEmpty()) return;
+                if (list.isEmpty()) {
+                    // Back off further each time, so a source that is down for a while is asked about
+                    // once every ten minutes rather than steadily.
+                    allianceRetryMs = Math.min(ALLIANCE_RETRY_MAX_MS, allianceRetryMs * 2);
+                    return;
+                }
+                allianceRetryMs = ALLIANCE_RETRY_MIN_MS;
                 Map<String, int[]> mega = new java.util.HashMap<>(), alli = new java.util.HashMap<>();
                 Map<String, List<String>> megaNames = new java.util.HashMap<>(), alliNames = new java.util.HashMap<>();
                 for (net.townymap.api.AllianceClient.Alliance a : list) {
@@ -4468,6 +4488,14 @@ public class TownyMapMod implements ClientModInitializer {
     private static final long PLAYER_DETAIL_TTL_MS = 600_000L;   // 10 minutes
     private static final Map<String, Long> playerDetailsAt = new ConcurrentHashMap<>();
 
+    /**
+     * Above this many entries the cache is swept. Two keys are written per player, and a long session
+     * that browses the map touches a great many of EarthMC's forty-odd thousand accounts.
+     */
+    private static final int PLAYER_DETAIL_CACHE_MAX = 4_000;
+    private static final long PLAYER_DETAIL_SWEEP_MS = 60_000L;
+    private static volatile long lastPlayerDetailSweepMs = 0L;
+
     /** Records a fetched player under both keys, with the time, so the entry can go stale later. */
     private static void cachePlayerDetails(String key, EarthMcPlayerData data) {
         long now = System.currentTimeMillis();
@@ -4476,6 +4504,29 @@ public class TownyMapMod implements ClientModInitializer {
         String nameKey = townKey(data.name());
         playerDetailsCache.put(nameKey, data);
         playerDetailsAt.put(nameKey, now);
+        sweepPlayerDetailsIfLarge(now);
+    }
+
+    /**
+     * Drops cached players that are past their TTL, once the cache has grown large enough to be worth
+     * the walk.
+     *
+     * <p>Entries expired but were never removed: {@link #playerDetailNeeded} treats a stale one as
+     * missing and fetches it again, so it was only ever taking up room from then on. Nothing is lost
+     * by dropping them, and nothing still in date is touched.
+     *
+     * <p>Rate-limited separately from the size check, so a cache that is over the cap but entirely
+     * fresh does not walk itself on every single put.
+     */
+    private static void sweepPlayerDetailsIfLarge(long now) {
+        if (playerDetailsCache.size() <= PLAYER_DETAIL_CACHE_MAX) return;
+        if (now - lastPlayerDetailSweepMs < PLAYER_DETAIL_SWEEP_MS) return;
+        lastPlayerDetailSweepMs = now;
+        playerDetailsAt.entrySet().removeIf(e -> {
+            if (now - e.getValue() < PLAYER_DETAIL_TTL_MS) return false;
+            playerDetailsCache.remove(e.getKey());
+            return true;
+        });
     }
 
     private static boolean playerDetailNeeded(String key, long now) {

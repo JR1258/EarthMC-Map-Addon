@@ -66,10 +66,20 @@ public final class AllianceClient {
             JsonElement listEl = JsonParser.parseString(decode(listResp));
             if (!listEl.isJsonObject()) return List.of();
 
+            // One POST per alliance, and there are dozens. If the source starts refusing us partway
+            // through, every remaining request is refused too -- so stop, and report nothing rather
+            // than a half list, which the caller would otherwise apply as if it were complete and
+            // leave most nations unlabelled until the next refresh.
             List<Alliance> out = new ArrayList<>();
-            for (String name : listEl.getAsJsonObject().keySet()) {   // { "African Union": "uuid", … }
-                Alliance a = fetchOne(name);
-                if (a != null) out.add(a);
+            try {
+                for (String name : listEl.getAsJsonObject().keySet()) {   // { "African Union": "uuid", … }
+                    Alliance a = fetchOne(name);
+                    if (a != null) out.add(a);
+                }
+            } catch (RateLimited e) {
+                LOGGER.warn("[TownyMap] Alliance fetch rate-limited after {} of {}; keeping the old data",
+                        out.size(), listEl.getAsJsonObject().size());
+                return List.of();
             }
             LOGGER.info("[TownyMap] Loaded {} alliances/meganations from BreakTheBot", out.size());
             return out;
@@ -93,12 +103,21 @@ public final class AllianceClient {
                             .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
                             .build(),
                     HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() == 429) throw new RateLimited();
             if (resp.statusCode() / 100 != 2) return null;
             JsonElement el = JsonParser.parseString(decode(resp));
             return el.isJsonObject() ? parseModel(el.getAsJsonObject()) : null;
+        } catch (RateLimited e) {
+            throw e;                       // the loop above needs to see this one, not swallow it
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Raised out of the per-alliance loop when the source starts refusing us. No stack trace: it is
+     *  flow control between two methods in this file, not a fault anyone needs to read. */
+    private static final class RateLimited extends RuntimeException {
+        RateLimited() { super(null, null, false, false); }
     }
 
     /** Maps a BreakTheBot Alliance_Model to our {@link Alliance}. */

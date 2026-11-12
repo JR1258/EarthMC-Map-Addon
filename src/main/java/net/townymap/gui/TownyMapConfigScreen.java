@@ -101,9 +101,10 @@ public class TownyMapConfigScreen extends Screen {
             Map.entry("Custom Overlays",
                     "Load your own GeoJSON overlays from the config folder."),
             Map.entry("Player Indicator",
-                    "Which minimap background shows the arrow marking you: over the EMC overlay, over "
-                    + "Xaero's own map, both, or off. Off also hides it under the EMC overlay, which "
-                    + "covers Xaero's own arrow."),
+                    "Which minimap background shows the arrow marking you. The EMC overlay covers "
+                    + "Xaero's own arrow, so ours stands in there. Over Xaero's map its arrow is "
+                    + "already drawn, so \"Xaero\" and \"Both\" lay a second copy on top of it. Off "
+                    + "leaves no arrow at all under the EMC overlay."),
             Map.entry("Chunk Grid",
                     "Draw chunk boundaries on the minimap."),
             Map.entry("Player Heads",

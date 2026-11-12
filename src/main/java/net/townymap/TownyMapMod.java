@@ -1123,6 +1123,14 @@ public class TownyMapMod implements ClientModInitializer {
         for (PlayerMarker m : apiClient.getPlayers(worldKey)) {
             if (m.name() != null) feed.add(m.name().toLowerCase(Locale.ROOT));
         }
+        // Who is still connected. getPlayerInfo(name) walks the whole tab list for each call, and on
+        // EarthMC that list runs to hundreds -- asking it once per surviving history entry was the
+        // single most expensive thing the minimap did. One pass builds the same answer.
+        Set<String> online = new java.util.HashSet<>();
+        for (var info : handler.getOnlinePlayers()) {
+            String n = info.getProfile().name();
+            if (n != null) online.add(n.toLowerCase(Locale.ROOT));
+        }
         Map<String, net.townymap.model.PlayerHistoryEntry> history = apiClient.getPlayerHistory();
 
         List<GhostMarker> out = new ArrayList<>();
@@ -1132,7 +1140,7 @@ public class TownyMapMod implements ClientModInitializer {
             var h = e.getValue();
             long age = now - h.lastSeenMs();
             if (age < 0 || age > GHOST_MAX_AGE_MS) continue;
-            if (handler.getPlayerInfo(h.name()) == null) continue;   // logged off → remove
+            if (h.name() == null || !online.contains(h.name().toLowerCase(Locale.ROOT))) continue;  // logged off
             out.add(new GhostMarker(h.name(), h.uuid(), h.x(), h.z(), 0xFF));
         }
 
@@ -1732,17 +1740,22 @@ public class TownyMapMod implements ClientModInitializer {
             // retention buffer means the list self-corrects within a refresh and honours the Last Seen toggle.
             record Nearby(String name, double dist, boolean ghost) {}
             java.util.List<Nearby> near = new java.util.ArrayList<>();
+            // Squared distance for the test, so the 100-block filter costs a multiply rather than a
+            // Math.hypot -- which is FdLibm, far dearer than it looks -- for every marker on the feed.
+            double rangeSq = (100.0 * dimScale) * (100.0 * dimScale);
             for (PlayerMarker m : apiClient.getPlayers(hudWorld)) {
                 if (m.name() == null || m.name().equalsIgnoreCase(self)) continue;
-                double d = Math.hypot(m.x() - px, m.z() - pz) / dimScale;
-                if (d <= 100.0) near.add(new Nearby(m.name(), d, false));
+                double dx = m.x() - px, dz = m.z() - pz;
+                double dsq = dx * dx + dz * dz;
+                if (dsq <= rangeSq) near.add(new Nearby(m.name(), Math.sqrt(dsq) / dimScale, false));
             }
             // Recently-departed players at their last-seen position (red), exactly the minimap's ghost data —
             // so you can still see roughly where someone was after they drop off the live feed.
             for (GhostMarker g : lastSeenGhosts(hudWorld)) {
                 if (g.name() == null || g.name().equalsIgnoreCase(self)) continue;
-                double d = Math.hypot(g.x() - px, g.z() - pz) / dimScale;
-                if (d <= 100.0) near.add(new Nearby(g.name(), d, true));
+                double dx = g.x() - px, dz = g.z() - pz;
+                double dsq = dx * dx + dz * dz;
+                if (dsq <= rangeSq) near.add(new Nearby(g.name(), Math.sqrt(dsq) / dimScale, true));
             }
             near.sort(java.util.Comparator.comparingDouble(Nearby::dist));
             java.util.List<String> entries = new java.util.ArrayList<>();
@@ -1763,13 +1776,17 @@ public class TownyMapMod implements ClientModInitializer {
         }
 
         if (config.infoDisplayNearestTownEnabled && here == null && !towns.isEmpty()) {
+            // Nearly six thousand towns, every frame: ordering by squared distance gives the same
+            // winner and leaves exactly one square root to take, at the end.
             TownData nearest = null;
-            double best = Double.MAX_VALUE;
+            double bestSq = Double.MAX_VALUE;
             for (TownData t : towns) {
-                double d = Math.hypot(t.centerX() - px, t.centerZ() - pz) / dimScale;
-                if (d < best) { best = d; nearest = t; }
+                double dx = t.centerX() - px, dz = t.centerZ() - pz;
+                double dsq = dx * dx + dz * dz;
+                if (dsq < bestSq) { bestSq = dsq; nearest = t; }
             }
             if (nearest != null) {
+                double best = Math.sqrt(bestSq) / dimScale;
                 lines.add("§fNearest: " + nearest.name() + " §7(" + (int) Math.round(best) + "m)");
             }
         }
@@ -4665,7 +4682,11 @@ public class TownyMapMod implements ClientModInitializer {
 
     public static boolean isFavorite(String townName) {
         if (config == null || townName == null) return false;
-        return favoriteTownKeys().contains(townKey(townName));
+        // Asked once per visible town per frame by both minimap passes, and townKey() allocates a
+        // lowercased copy of the name. With no favourites there is nothing to match, so the common
+        // case does no work at all.
+        Set<String> keys = favoriteTownKeys();
+        return !keys.isEmpty() && keys.contains(townKey(townName));
     }
 
     /** Starred nations/players, kept alongside favourite towns and toggled the same way. */
@@ -4814,6 +4835,7 @@ public class TownyMapMod implements ClientModInitializer {
     private static void saveTownDetailsCacheNow() {
         Path path = townDetailsCachePath();
         try {
+            pruneTownDetailsCache();
             Files.createDirectories(path.getParent());
             Files.writeString(path, GSON.toJson(townDetailsCache));
         } catch (Exception e) {
@@ -4822,6 +4844,34 @@ public class TownyMapMod implements ClientModInitializer {
             if (townDetailCacheSaveErrorLogged.compareAndSet(false, true)) {
                 LOGGER.warn("[TownyMap] Failed to save town detail cache", e);
             }
+        }
+    }
+
+    /**
+     * Drops cached details for towns that are no longer on the map.
+     *
+     * <p>The cache is written whole and read back whole at launch, and nothing ever removed an entry,
+     * so every town that has ever been looked at stayed in it for good -- and in the heap for the
+     * whole session. On this account it had grown to around seven thousand entries against fewer than
+     * six thousand live towns: one entry in six was for a town that had been deleted or renamed.
+     *
+     * <p>Only ever on save, and only when the live town list has actually loaded. An empty or partial
+     * list must not be read as "every town is gone", and in archive mode the live list is a snapshot
+     * of some past date, which would throw away everything founded since.
+     */
+    private static void pruneTownDetailsCache() {
+        if (apiClient == null || isArchiveMode()) return;
+        List<TownData> live = apiClient.getTowns();
+        if (live.isEmpty()) return;
+        Set<String> keep = new java.util.HashSet<>(live.size() * 2);
+        for (TownData t : live) keep.add(townKey(t.name()));
+        int before = townDetailsCache.size();
+        townDetailsCache.keySet().retainAll(keep);
+        townDetailsFetchedAt.keySet().retainAll(keep);
+        int dropped = before - townDetailsCache.size();
+        if (dropped > 0) {
+            LOGGER.info("[TownyMap] Town detail cache: dropped {} entries for towns no longer on the map",
+                    dropped);
         }
     }
 

@@ -1916,7 +1916,9 @@ public final class TownyMinimapOverlay {
     private static java.lang.reflect.Method xaeroGetEffective;
     private static Object xaeroShapeOption;
     private static Object xaeroArrowScaleOption;
-    private static long xaeroResolveAttemptedAt = Long.MIN_VALUE;
+    /** 0, not Long.MIN_VALUE: the check below is a subtraction, and now - Long.MIN_VALUE
+     *  overflows to a large negative, which reads as "attempted a moment ago" for ever. */
+    private static long xaeroResolveAttemptedAt = 0L;
 
     /**
      * Resolves Xaero's config manager and the two options read per frame.

@@ -270,13 +270,14 @@ public final class TownSearchOverlay {
                 int shown = Math.min(STACK_ROWS, rows.size());
                 stackOffset = clampStackOffset(stackOffset, rows.size());
                 boolean bar = rows.size() > shown;
+                refreshStaleRecents(rows, towns);
                 for (int slot = 0; slot < shown; slot++) {
                     int index = stackIndexAt(slot, shown);
                     StackRow row = rows.get(index);
                     int rowY = resultRowY(y, slot);
                     ctx.fill(x - 1, rowY - 1, x + W + 1, rowY + ROW_HEIGHT + 1, BORDER);
                     ctx.fill(x, rowY, x + W, rowY + ROW_HEIGHT, index == stackSelected ? HOVER : BG);
-                    String text = row.label(isStale(row, towns));
+                    String text = row.label(isStale(row));
                     int room = W - 14 - (bar ? SCROLLBAR_W + SCROLLBAR_PAD * 2 : 0);
                     ctx.text(tr, trimToWidth(tr, text, room), x + 7, rowY + 5, 0xFFFFFFFF, true);
                 }
@@ -1696,8 +1697,7 @@ public final class TownSearchOverlay {
         // and give up a column to the scrollbar. Every row counts, not just the four on screen, so the
         // bar keeps one width while you scroll it.
         if (focused && query.isEmpty()) {
-            int gutter = 20 + SCROLLBAR_W + SCROLLBAR_PAD * 2;
-            for (StackRow row : stackRows()) needed = Math.max(needed, tr.width(row.label(false)) + gutter);
+            needed = Math.max(needed, stackWidth() + 20 + SCROLLBAR_W + SCROLLBAR_PAD * 2);
         }
         return Math.max(WIDTH, Math.min(Math.min(MAX_WIDTH, Math.max(WIDTH, sw - 24)), needed));
     }
@@ -1744,29 +1744,80 @@ public final class TownSearchOverlay {
         }
     }
 
-    /** The stack, top row first. Rebuilt per frame: it is four string reads and a config list copy. */
-    private static List<StackRow> stackRows() {
-        List<StackRow> rows = new ArrayList<>();
-        // Mid-prompt the stack is the prompt: history underneath would just be somewhere else to look.
-        if (PlanningOverlay.isActive() && !PlanningOverlay.hasNation()) {
-            rows.add(new StackRow("§fPlease enter a nation", null, null, 0L));
-            return rows;
-        }
-        for (String hint : HINTS) rows.add(new StackRow(hint, null, null, 0L));
-        for (TownyMapConfig.RecentSearch r : TownyMapMod.recentSearches()) {
-            rows.add(new StackRow(null, r.kind(), r.name(), r.atMs()));
-        }
-        return rows;
-    }
+    private static List<StackRow> cachedStack = List.of();
+    private static int cachedStackWidth = 0;
+    private static long stackBuiltAt = 0L;
+    private static int stackBuiltKey = Integer.MIN_VALUE;
 
     /**
-     * True if a remembered town has since dropped off the map. Called for the visible rows only, so the
-     * scan over the town list runs at most {@link #STACK_ROWS} times a frame rather than once per
-     * remembered row. Nations and players are never dimmed: both resolve lazily and a missing one
-     * usually means the detail has not arrived yet, not that it is gone.
+     * The stack, top row first, rebuilt at most once a second.
+     *
+     * <p>It is read several times a frame -- the bar measures it, draws it and hit-tests it -- and a
+     * rebuild is a dozen records, a dozen formatted strings and, through {@link #stackWidth()}, a dozen
+     * font measurements. None of it changes between frames: the only moving part is the "3h ago" on each
+     * row, and a second of staleness cannot show on that. Anything that does change the list on the spot
+     * -- opening a row, clearing the history -- bumps the version and is picked up immediately.
      */
-    private static boolean isStale(StackRow row, List<TownData> towns) {
-        return "town".equals(row.kind()) && !towns.isEmpty() && townByName(towns, row.name()) == null;
+    private static List<StackRow> stackRows() {
+        boolean prompt = PlanningOverlay.isActive() && !PlanningOverlay.hasNation();
+        int key = TownyMapMod.searchHistoryVersion() * 2 + (prompt ? 1 : 0);
+        long now = System.currentTimeMillis();
+        if (key == stackBuiltKey && now - stackBuiltAt < 1000L) return cachedStack;
+        stackBuiltKey = key;
+        stackBuiltAt = now;
+
+        List<StackRow> rows = new ArrayList<>();
+        // Mid-prompt the stack is the prompt: history underneath would just be somewhere else to look.
+        if (prompt) {
+            rows.add(new StackRow("§fPlease enter a nation", null, null, 0L));
+        } else {
+            for (String hint : HINTS) rows.add(new StackRow(hint, null, null, 0L));
+            for (TownyMapConfig.RecentSearch r : TownyMapMod.recentSearches()) {
+                rows.add(new StackRow(null, r.kind(), r.name(), r.atMs()));
+            }
+        }
+        cachedStack = rows;
+        Font tr = Minecraft.getInstance().font;
+        int widest = 0;
+        for (StackRow row : rows) widest = Math.max(widest, tr.width(row.label(false)));
+        cachedStackWidth = widest;
+        return cachedStack;
+    }
+
+    /** Width of the widest row, measured when the stack was built rather than on every frame. */
+    private static int stackWidth() {
+        stackRows();
+        return cachedStackWidth;
+    }
+
+    /** Remembered towns that have dropped off the map, refreshed on a slow tick (never per frame). */
+    private static Set<String> staleRecents = Set.of();
+    private static long staleCheckedAt = 0L;
+
+    /**
+     * Works out which remembered towns no longer exist.
+     *
+     * <p>Every answer is a scan of the whole town list -- getting on for six thousand entries -- so
+     * asking once per visible row per frame was over a million string comparisons a second to grey out
+     * at most four rows. Towns do not come and go between frames.
+     *
+     * <p>Only towns are dimmed. Nations and players resolve lazily, so a missing one usually means the
+     * detail has not arrived yet rather than that it is gone.
+     */
+    private static void refreshStaleRecents(List<StackRow> rows, List<TownData> towns) {
+        long now = System.currentTimeMillis();
+        if (now - staleCheckedAt < 2000L) return;
+        staleCheckedAt = now;
+        if (towns.isEmpty()) { staleRecents = Set.of(); return; }   // still loading: nothing is "gone" yet
+        Set<String> stale = new HashSet<>();
+        for (StackRow row : rows) {
+            if ("town".equals(row.kind()) && townByName(towns, row.name()) == null) stale.add(row.name());
+        }
+        staleRecents = stale;
+    }
+
+    private static boolean isStale(StackRow row) {
+        return "town".equals(row.kind()) && staleRecents.contains(row.name());
     }
 
     private static int clampStackOffset(int offset, int total) {

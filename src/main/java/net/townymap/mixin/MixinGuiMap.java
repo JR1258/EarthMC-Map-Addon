@@ -170,6 +170,23 @@ public abstract class MixinGuiMap {
                 : original;
     }
 
+    /**
+     * Liveness only, so the health check has a signal that does not depend on what Xaero decides to
+     * draw.
+     *
+     * <p>The other two pings sit where they happened to be useful: one at the player-arrow field read,
+     * which Xaero skips entirely when the map UI is hidden, and one in renderPreDropdown. Anchoring
+     * "are our hooks alive?" on either meant a normal Xaero setting could make us announce that Xaero
+     * was incompatible. This one is at the head of the method the whole overlay hangs off, so it fires
+     * on every frame the map draws, and stops only when the thing we actually depend on has moved --
+     * which is exactly what the check is for.
+     */
+    @Inject(require = 0, method = "extractRenderState", at = @At("HEAD"), remap = false)
+    private void onExtractRenderStateHead(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
+                                          float delta, CallbackInfo ci) {
+        TownyMapMod.noteWorldMapInjectAlive();
+    }
+
     @Inject(require = 0, method = "renderPreDropdown", at = @At("HEAD"), remap = false)
     private void onRenderPreDropdown(GuiGraphicsExtractor ctx, int mouseX, int mouseY,
                                      float delta, CallbackInfo ci) {

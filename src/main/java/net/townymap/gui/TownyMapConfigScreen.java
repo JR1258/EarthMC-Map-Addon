@@ -278,6 +278,10 @@ public class TownyMapConfigScreen extends Screen {
         option("Search Result Flash", onOff(cfg.searchFlash, v -> cfg.searchFlash = v),
                 () -> cfg.searchFlash == DEFAULTS.searchFlash,
                 () -> cfg.searchFlash = DEFAULTS.searchFlash);
+        option("Search History", onOff(cfg.recordSearchHistory, v -> cfg.recordSearchHistory = v),
+                () -> cfg.recordSearchHistory == DEFAULTS.recordSearchHistory,
+                () -> cfg.recordSearchHistory = DEFAULTS.recordSearchHistory);
+        action("Clear Search History", TownyMapMod::clearSearchHistory);
         action("Reload Claims", TownyMapMod::refreshTownClaimsFromSettings);
         refreshKeyButton = ButtonWidget.builder(refreshKeyLabel(), b -> {
             awaitingRefreshKey = true;

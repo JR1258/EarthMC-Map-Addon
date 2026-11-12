@@ -6,6 +6,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.townymap.TownyMapConfig;
 import net.townymap.TownyMapMod;
 import net.townymap.model.EarthMcNationData;
 import net.townymap.model.EarthMcPlayerData;
@@ -38,11 +39,24 @@ public final class TownSearchOverlay {
     private static final int MAX_WIDTH = 460;
     /** Current bar width, recomputed each frame from the query and results so nothing is cut off. */
     private static volatile int panelWidth = WIDTH;
-    /** What an empty bar advertises. The short forms are the ones worth teaching, so they come first. */
+    /**
+     * What an empty bar advertises, top row first -- the stack reads downward now, so this list does
+     * too. The archive row stays at the very top where it has always been drawn, and the filters sit
+     * under it, nearest the history and the bar.
+     */
     private static final List<String> HINTS = List.of(
-            "§7Filter: §fnationless§7, §fn:germany,france",
+            "§7Type §fdd/mm/yyyy §7= archive",
             "§7Filter: §fr>30,<60§7, §fchunks>500",
-            "§7Type §fdd/mm/yyyy §7= archive");
+            "§7Filter: §fnationless§7, §fn:germany,france");
+    /**
+     * How many rows of the empty-bar stack are on screen at once: the three hints plus one more.
+     *
+     * <p>That extra row is the whole advertisement for the history -- it holds your newest search, so it
+     * both says "there is history here" and is already clickable, where a row reading "scroll for recents"
+     * would cost the same space and give you nothing to click. The cap is what keeps a long history from
+     * climbing the screen; the rest arrives by scrolling.
+     */
+    private static final int STACK_ROWS = 4;
     private static final int FAVORITES_WIDTH = 74;
     private static final int ROW_HEIGHT = 20;
     private static final int MAX_RESULTS = 7;
@@ -51,6 +65,11 @@ public final class TownSearchOverlay {
      *  whole-map zoom is no more useful for a player than for a town. */
     private static final int PLAYER_FRAME_BLOCKS = 512;
     private static final int MAX_INFO_LINES = 11;
+    private static final int SCROLL_TRACK = 0xFF24282D;
+    private static final int SCROLL_THUMB = 0xFF6E757D;
+    private static final int SCROLLBAR_W = 3;
+    /** Gap between the scrollbar and the stack's right border, top and bottom too. */
+    private static final int SCROLLBAR_PAD = 2;
     private static final int BG = 0xD8101010;
     private static final int BORDER = 0xFF333333;
     private static final int ACTIVE_BORDER = 0xFFDDDDDD;
@@ -70,6 +89,12 @@ public final class TownSearchOverlay {
     private static String selectedType = "";
     private static String selectedName = "";
     private static boolean favoritesOpen;
+    /** First visible row of the empty-bar stack, counting up from the bar. 0 = the hints as they were. */
+    private static int stackOffset = 0;
+    /** Absolute index of the highlighted stack row, or -1 for none. Only history rows can hold it. */
+    private static int stackSelected = -1;
+    /** A left-drag that started on the scrollbar is moving the thumb. */
+    private static boolean stackDragging = false;
 
     /** The nation currently selected in the panel (via a capital-star click or a nation search), else null. */
     public static String selectedNationName() {
@@ -106,6 +131,7 @@ public final class TownSearchOverlay {
             clearFilterHighlight();
             focused = true;                          // straight into typing
             selected = 0;
+            resetStack();
         } else if (before == PlanningOverlay.MODE) {
             PlanningOverlay.reset();
             rangeNation = null;
@@ -158,7 +184,8 @@ public final class TownSearchOverlay {
                               List<String> favoriteTowns) {
         MinecraftClient mc = MinecraftClient.getInstance();
         TextRenderer tr = mc.textRenderer;
-        tickTextDrag(mc, sw);   // follow a left-drag over the bar (updates the caret/selection)
+        tickTextDrag(mc, sw);    // follow a left-drag over the bar (updates the caret/selection)
+        tickStackDrag(mc);       // follow a left-drag down the stack's scrollbar
 
         // Results are needed before layout: the bar widens to fit the longest row, so nothing is ellipsised.
         List<Result> results = focused
@@ -235,18 +262,33 @@ public final class TownSearchOverlay {
                 ctx.fill(x, rowY, x + W, rowY + ROW_HEIGHT, i == selected ? HOVER : BG);
                 ctx.drawText(tr, trimToWidth(tr, result.label(), W - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
             }
-            // Empty bar: advertise what the bar can do beyond names — filters first, archive last, since
-            // the archive row was the only hint before and stays where players already expect it.
+            // Empty bar: the hints advertise what it can do beyond names, and your recent searches hang
+            // underneath them, nearest the bar. Only STACK_ROWS rows show at once -- the wheel, the arrow
+            // keys and the scrollbar walk the rest, scrolling down into older searches.
             if (query.isEmpty()) {
-                boolean planningPrompt = PlanningOverlay.isActive() && !PlanningOverlay.hasNation();
-                List<String> hints = planningPrompt
-                        ? List.of("§fPlease enter a nation")
-                        : HINTS;
-                for (int i = 0; i < hints.size(); i++) {
-                    int rowY = resultRowY(y, i);
+                List<StackRow> rows = stackRows();
+                int shown = Math.min(STACK_ROWS, rows.size());
+                stackOffset = clampStackOffset(stackOffset, rows.size());
+                boolean bar = rows.size() > shown;
+                for (int slot = 0; slot < shown; slot++) {
+                    int index = stackIndexAt(slot, shown);
+                    StackRow row = rows.get(index);
+                    int rowY = resultRowY(y, slot);
                     ctx.fill(x - 1, rowY - 1, x + W + 1, rowY + ROW_HEIGHT + 1, BORDER);
-                    ctx.fill(x, rowY, x + W, rowY + ROW_HEIGHT, BG);
-                    ctx.drawText(tr, trimToWidth(tr, hints.get(i), W - 14), x + 7, rowY + 5, 0xFFFFFFFF, true);
+                    ctx.fill(x, rowY, x + W, rowY + ROW_HEIGHT, index == stackSelected ? HOVER : BG);
+                    String text = row.label(isStale(row, towns));
+                    int room = W - 14 - (bar ? SCROLLBAR_W + SCROLLBAR_PAD * 2 : 0);
+                    ctx.drawText(tr, trimToWidth(tr, text, room), x + 7, rowY + 5, 0xFFFFFFFF, true);
+                }
+                if (bar) {
+                    int sx = scrollbarX(x, W);
+                    int trackTop = trackTop(y, shown);
+                    int trackH = trackHeight(shown);
+                    ctx.fill(sx, trackTop, sx + SCROLLBAR_W, trackTop + trackH, SCROLL_TRACK);
+                    int th = thumbHeight(trackH, shown, rows.size());
+                    int thumbY = thumbY(trackTop, trackH, shown, rows.size());
+                    ctx.fill(sx, thumbY, sx + SCROLLBAR_W, thumbY + th,
+                            stackDragging ? ACTIVE_BORDER : SCROLL_THUMB);
                 }
             }
         }
@@ -311,11 +353,39 @@ public final class TownSearchOverlay {
         if (inside(barMx, barMy, x, y, panelWidth, ROW_HEIGHT)) {
             focused = true;
             selected = 0;
+            resetStack();                       // never reopen the stack scrolled somewhere you left it
             caret = charIndexAtX(sw, mouseX);   // place the cursor where they clicked (raw mouse)
             selAnchor = caret;                  // anchor a potential drag-select
             textDragging = true;
             clearSelection();                   // hide the info panel while typing a new search
             return ClickResult.consumedResult();
+        }
+
+        // An empty focused bar shows the hint/history stack in place of results, so it owns these rows.
+        if (focused && query.isEmpty()) {
+            List<StackRow> rows = stackRows();
+            int shown = Math.min(STACK_ROWS, rows.size());
+            stackOffset = clampStackOffset(stackOffset, rows.size());
+            // The scrollbar sits on top of the rows, so it gets first refusal. Its hit area reaches a
+            // few pixels past the bar itself: three pixels of track is not something you can aim at.
+            if (rows.size() > shown) {
+                int sx = scrollbarX(x, panelWidth);
+                int trackTop = trackTop(y, shown);
+                int trackH = trackHeight(shown);
+                if (inside(barMx, barMy, sx - 4, trackTop - SCROLLBAR_PAD,
+                           SCROLLBAR_W + 4 + SCROLLBAR_PAD, trackH + SCROLLBAR_PAD * 2)) {
+                    stackDragging = true;
+                    dragStackTo(barMy, trackTop, trackH, shown, rows.size());
+                    return ClickResult.consumedResult();
+                }
+            }
+            for (int slot = 0; slot < shown; slot++) {
+                if (!inside(barMx, barMy, x, resultRowY(y, slot), panelWidth, ROW_HEIGHT)) continue;
+                StackRow row = rows.get(stackIndexAt(slot, shown));
+                // A hint row is inert, but it still swallows the click: falling through would read as
+                // "clicked outside" and close the bar the player was aiming at.
+                return row.isHistory() ? openRecent(row, towns) : ClickResult.consumedResult();
+            }
         }
 
         if (focused) {
@@ -348,8 +418,7 @@ public final class TownSearchOverlay {
      */
     private static void tickTextDrag(MinecraftClient mc, int sw) {
         if (!textDragging) return;
-        boolean held = focused && mc.getWindow() != null
-                && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        boolean held = focused && leftMouseHeld(mc);
         if (held) {
             caret = charIndexAtX(sw, mc.mouse.getX() * sw / (double) mc.getWindow().getWidth());
         } else {
@@ -454,14 +523,22 @@ public final class TownSearchOverlay {
         if (keyCode == GLFW.GLFW_KEY_HOME) { moveCaret(0, shiftDown()); return ClickResult.consumedResult(); }
         if (keyCode == GLFW.GLFW_KEY_END)  { moveCaret(query.length(), shiftDown()); return ClickResult.consumedResult(); }
         if (keyCode == GLFW.GLFW_KEY_DOWN) {
+            if (query.isEmpty()) { moveStackSelection(1); return ClickResult.consumedResult(); }
             if (!results.isEmpty()) selected = Math.min(results.size() - 1, selected + 1);
             return ClickResult.consumedResult();
         }
         if (keyCode == GLFW.GLFW_KEY_UP) {
+            if (query.isEmpty()) { moveStackSelection(-1); return ClickResult.consumedResult(); }
             selected = Math.max(0, selected - 1);
             return ClickResult.consumedResult();
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            if (query.isEmpty() && stackSelected >= 0) {
+                List<StackRow> rows = stackRows();
+                if (stackSelected < rows.size() && rows.get(stackSelected).isHistory()) {
+                    return openRecent(rows.get(stackSelected), towns);
+                }
+            }
             if (!results.isEmpty()) {
                 Result result = results.get(Math.min(selected, results.size() - 1));
                 focused = false;
@@ -484,6 +561,7 @@ public final class TownSearchOverlay {
     /** Post-edit housekeeping: reset the result cursor and rebuild the dropdown. */
     private static void afterEdit() {
         selected = 0;
+        resetStack();
         invalidateResults();
         clearSelection();
     }
@@ -903,6 +981,10 @@ public final class TownSearchOverlay {
             TownyMapMod.enterArchive(Integer.parseInt(result.name()));
             return;
         }
+        // Everything past the archive branch is somewhere you can go back to, so it joins the history
+        // under the bar. Deliberately here and not in openSearch(), which info-panel links and the
+        // favourites dropdown also route through: those are browsing, not searching.
+        TownyMapMod.rememberSearch(result.type(), result.name());
         if ("town".equals(result.type())) {
             // Towns use the same rich popup as right-clicking the map (Route button + full details),
             // so the search bar and the map share one town GUI instead of a separate inline panel.
@@ -943,6 +1025,7 @@ public final class TownSearchOverlay {
         textDragging = false;
         favoritesOpen = false;
         cachedNeedle = null;
+        resetStack();
         clearSelection();
     }
 
@@ -1609,9 +1692,12 @@ public final class TownSearchOverlay {
     private static int computePanelWidth(TextRenderer tr, List<Result> results, int sw) {
         int needed = tr.getWidth(query) + 20;
         for (Result r : results) needed = Math.max(needed, tr.getWidth(r.label()) + 20);
-        // An empty focused bar shows the hint rows, which are wider than the default bar.
+        // An empty focused bar shows the hint/history stack, whose rows are wider than the default bar
+        // and give up a column to the scrollbar. Every row counts, not just the four on screen, so the
+        // bar keeps one width while you scroll it.
         if (focused && query.isEmpty()) {
-            for (String h : HINTS) needed = Math.max(needed, tr.getWidth(h) + 20);
+            int gutter = 20 + SCROLLBAR_W + SCROLLBAR_PAD * 2;
+            for (StackRow row : stackRows()) needed = Math.max(needed, tr.getWidth(row.label(false)) + gutter);
         }
         return Math.max(WIDTH, Math.min(Math.min(MAX_WIDTH, Math.max(WIDTH, sw - 24)), needed));
     }
@@ -1631,6 +1717,199 @@ public final class TownSearchOverlay {
     }
 
     private record Result(String label, MapJumpTarget target, int score, String type, String name) {}
+
+    // ── Hint / history stack ─────────────────────────────────────────────────
+
+    /**
+     * One row of the empty-bar stack: first the filter hints, then what you last opened from a search
+     * box. A hint carries only its text and is inert; a history row carries the kind and name its jump
+     * is resolved from, and never a position -- a town's centre moves as it claims and unclaims.
+     */
+    private record StackRow(String hint, String kind, String name, long atMs) {
+
+        boolean isHistory() { return kind != null; }
+
+        String label(boolean stale) {
+            if (hint != null) return hint;
+            // A one-letter tag, the same one the favourites dropdown uses, so the three kinds stay
+            // apart when they share a name.
+            String letter = kind.substring(0, 1).toUpperCase(Locale.ROOT);
+            if (stale) return "§8" + letter + " " + name + "  " + ageLabel(atMs);
+            String tag = switch (kind) {
+                case "nation" -> "§9";
+                case "player" -> "§e";
+                default -> "§7";
+            };
+            return tag + letter + " §f" + name + "  §8" + ageLabel(atMs);
+        }
+    }
+
+    /** The stack, top row first. Rebuilt per frame: it is four string reads and a config list copy. */
+    private static List<StackRow> stackRows() {
+        List<StackRow> rows = new ArrayList<>();
+        // Mid-prompt the stack is the prompt: history underneath would just be somewhere else to look.
+        if (PlanningOverlay.isActive() && !PlanningOverlay.hasNation()) {
+            rows.add(new StackRow("§fPlease enter a nation", null, null, 0L));
+            return rows;
+        }
+        for (String hint : HINTS) rows.add(new StackRow(hint, null, null, 0L));
+        for (TownyMapConfig.RecentSearch r : TownyMapMod.recentSearches()) {
+            rows.add(new StackRow(null, r.kind(), r.name(), r.atMs()));
+        }
+        return rows;
+    }
+
+    /**
+     * True if a remembered town has since dropped off the map. Called for the visible rows only, so the
+     * scan over the town list runs at most {@link #STACK_ROWS} times a frame rather than once per
+     * remembered row. Nations and players are never dimmed: both resolve lazily and a missing one
+     * usually means the detail has not arrived yet, not that it is gone.
+     */
+    private static boolean isStale(StackRow row, List<TownData> towns) {
+        return "town".equals(row.kind()) && !towns.isEmpty() && townByName(towns, row.name()) == null;
+    }
+
+    private static int clampStackOffset(int offset, int total) {
+        return Math.max(0, Math.min(Math.max(0, total - STACK_ROWS), offset));
+    }
+
+    // The stack reads downward -- hints, then history -- while the rows are drawn upward from the bar,
+    // so slot 0 sits nearest the bar and holds the LAST visible entry. Everything below converts
+    // between the two; nothing else in the file needs to know which way round they are.
+
+    /** The content index drawn in {@code slot}, counting slots up from the search bar. */
+    private static int stackIndexAt(int slot, int shown) {
+        return stackOffset + (shown - 1 - slot);
+    }
+
+    /** Top edge of the whole stack. The rows are contiguous, so it is one block {@code shown} tall. */
+    private static int stackTop(int searchY, int shown) {
+        return resultRowY(searchY, shown - 1);
+    }
+
+    private static int scrollbarX(int x, int w) {
+        return x + w - SCROLLBAR_PAD - SCROLLBAR_W;
+    }
+
+    private static int trackTop(int searchY, int shown) {
+        return stackTop(searchY, shown) + SCROLLBAR_PAD;
+    }
+
+    private static int trackHeight(int shown) {
+        return shown * ROW_HEIGHT - SCROLLBAR_PAD * 2;
+    }
+
+    /** Thumb length as its share of the list, with a floor so a long history still leaves it grabbable. */
+    private static int thumbHeight(int trackH, int shown, int total) {
+        return Math.max(12, Math.min(trackH, trackH * shown / Math.max(1, total)));
+    }
+
+    private static int thumbY(int trackTop, int trackH, int shown, int total) {
+        int max = total - shown;
+        if (max <= 0) return trackTop;
+        return trackTop + (trackH - thumbHeight(trackH, shown, total)) * stackOffset / max;
+    }
+
+    /** Puts the thumb's centre under the cursor, clamped to the track. */
+    private static void dragStackTo(double my, int trackTop, int trackH, int shown, int total) {
+        int max = total - shown;
+        if (max <= 0) { stackOffset = 0; return; }
+        double span = trackH - thumbHeight(trackH, shown, total);
+        double frac = span <= 0 ? 0 : (my - trackTop - thumbHeight(trackH, shown, total) / 2.0) / span;
+        stackOffset = clampStackOffset((int) Math.round(Math.max(0, Math.min(1, frac)) * max), total);
+    }
+
+    /**
+     * Follows a left-drag down the scrollbar.
+     *
+     * <p>Polled rather than handled: the press arrives through Xaero's screen but the release never
+     * does, so without this the thumb would stay stuck to the cursor after the button came up. The
+     * text selection below drags the same way, for the same reason.
+     */
+    private static void tickStackDrag(MinecraftClient mc) {
+        if (!stackDragging) return;
+        List<StackRow> rows = stackRows();
+        int shown = Math.min(STACK_ROWS, rows.size());
+        if (!focused || !query.isEmpty() || rows.size() <= shown || !leftMouseHeld(mc)) {
+            stackDragging = false;
+            return;
+        }
+        int y = top();
+        double my = mc.mouse.getY() * mc.getWindow().getScaledHeight()
+                / (double) mc.getWindow().getHeight();
+        if (UiScale.active()) my = UiScale.unscale(my, y + ROW_HEIGHT / 2.0);
+        dragStackTo(my, trackTop(y, shown), trackHeight(shown), shown, rows.size());
+    }
+
+    private static boolean leftMouseHeld(MinecraftClient mc) {
+        return mc.getWindow() != null
+                && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                        == GLFW.GLFW_PRESS;
+    }
+
+    private static void resetStack() {
+        stackOffset = 0;
+        stackSelected = -1;
+        stackDragging = false;
+    }
+
+    /**
+     * Wheel over the stack. True only when the cursor is actually on it, so everywhere else the wheel
+     * still zooms Xaero's map -- swallowing it over the middle of the screen would be unusable.
+     */
+    public static boolean mouseScrolled(double mouseX, double mouseY, double amount, int sw) {
+        if (!focused || !query.isEmpty() || amount == 0) return false;
+        List<StackRow> rows = stackRows();
+        int shown = Math.min(STACK_ROWS, rows.size());
+        if (rows.size() <= shown) return false;          // nothing to scroll: leave the zoom alone
+        int x = left(sw);
+        int y = top();
+        double mx = mouseX, my = mouseY;
+        if (UiScale.active()) {
+            mx = UiScale.unscale(mouseX, x + panelWidth / 2.0);
+            my = UiScale.unscale(mouseY, y + ROW_HEIGHT / 2.0);
+        }
+        if (!inside(mx, my, x, stackTop(y, shown), panelWidth, shown * ROW_HEIGHT)) return false;
+        stackOffset = clampStackOffset(stackOffset + (amount > 0 ? -1 : 1), rows.size());
+        return true;
+    }
+
+    /**
+     * Arrows over the stack, which only the history rows accept. The stack reads downward -- hints on
+     * top, newest search under them, older ones below that -- so DOWN goes further back through the
+     * history and UP climbs out through the hints and off the list, the same way the results read.
+     */
+    private static void moveStackSelection(int screenDelta) {
+        List<StackRow> rows = stackRows();
+        // The history can shrink under a selection -- cleared from the settings, or the planning prompt
+        // taking the stack over -- which would otherwise leave the index stranded past the last row,
+        // where neither direction can reach it again.
+        if (stackSelected >= rows.size()) stackSelected = -1;
+        if (stackSelected < 0 && screenDelta < 0) return;   // nothing selected: only DOWN enters the stack
+        int i = stackSelected < 0 ? -1 : stackSelected;
+        do {
+            i += screenDelta;
+            if (i < 0) { resetStack(); return; }             // climbed out past the top hint
+            if (i >= rows.size()) return;                    // already on the oldest: stay put
+        } while (!rows.get(i).isHistory());
+        stackSelected = i;
+        if (stackSelected < stackOffset) stackOffset = stackSelected;
+        else if (stackSelected >= stackOffset + STACK_ROWS) stackOffset = stackSelected - STACK_ROWS + 1;
+        stackOffset = clampStackOffset(stackOffset, rows.size());
+    }
+
+    /** Re-opens a remembered search: its panel or popup, plus a jump to wherever it is now. */
+    private static ClickResult openRecent(StackRow row, List<TownData> towns) {
+        resetStack();
+        TownData town = "town".equals(row.kind()) ? townByName(towns, row.name()) : null;
+        // Re-using a row is a search too, so it moves back to the top; otherwise the row you open most
+        // would drift down the list while rows you opened once sat above it.
+        TownyMapMod.rememberSearch(row.kind(), row.name());
+        openSearch(row.kind(), row.name());   // fills the bar, drops focus, raises the popup or panel
+        if (town != null) return ClickResult.jump(town);
+        MapJumpTarget target = favoriteTarget(new FavEntry(row.kind(), row.name(), null), towns);
+        return target != null ? ClickResult.jump(target) : ClickResult.consumedResult();
+    }
 
     // ── Property filters ─────────────────────────────────────────────────────
 

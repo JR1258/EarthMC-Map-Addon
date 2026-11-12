@@ -3152,6 +3152,12 @@ public class TownyMapMod implements ClientModInitializer {
                 activeNationList(), activeNationDetails());
     }
 
+    /** Wheel over the search bar's hint/history stack. False leaves the event to Xaero, which zooms. */
+    public static boolean onTownSearchScroll(double mouseX, double mouseY, double amount, int screenW) {
+        if (!isActiveOnCurrentServer()) return false;
+        return TownSearchOverlay.mouseScrolled(mouseX, mouseY, amount, screenW);
+    }
+
     public static boolean onTownSearchCharTyped(char chr) {
         if (!isActiveOnCurrentServer()) return false;
         return TownSearchOverlay.charTyped(chr);
@@ -4686,6 +4692,43 @@ public class TownyMapMod implements ClientModInitializer {
     /** Starred players, for the favourites dropdown. */
     public static List<String> favoritePlayers() {
         return config == null ? List.of() : List.copyOf(config.favoritePlayers);
+    }
+
+    /** What you last opened from a search box, newest first, for the search bar's scrollable stack. */
+    public static List<TownyMapConfig.RecentSearch> recentSearches() {
+        return config == null || !config.recordSearchHistory
+                ? List.of() : List.copyOf(config.recentSearches);
+    }
+
+    /**
+     * Records something opened from a search box, newest first and deduped.
+     *
+     * <p>Only ever called from a search activation -- never from {@code openDetail} itself. Clicking a
+     * nation, then its capital, then the mayor, then their town is browsing, and recording the whole
+     * chain would bury the thing you actually looked up under four pages you merely passed through.
+     *
+     * <p>Writes the config, which rewrites the whole file, so this must stay on user actions and off
+     * any render path.
+     */
+    public static void rememberSearch(String type, String name) {
+        if (config == null || !config.recordSearchHistory) return;
+        if (name == null || name.isBlank() || type == null || type.isBlank()) return;
+        // An archive snapshot is full of towns that no longer exist; seeding the live jump list from one
+        // would leave rows that go nowhere the moment you come back to the present.
+        if (isArchiveMode()) return;
+        config.recentSearches.removeIf(r -> r != null && r.kind().equalsIgnoreCase(type)
+                && r.name().equalsIgnoreCase(name));
+        config.recentSearches.add(0, new TownyMapConfig.RecentSearch(type, name, System.currentTimeMillis()));
+        while (config.recentSearches.size() > TownyMapConfig.MAX_RECENT_SEARCHES) {
+            config.recentSearches.remove(config.recentSearches.size() - 1);
+        }
+        config.save();
+    }
+
+    public static void clearSearchHistory() {
+        if (config == null || config.recentSearches.isEmpty()) return;
+        config.recentSearches.clear();
+        config.save();
     }
 
     private static void toggleFavorite(String townName) {

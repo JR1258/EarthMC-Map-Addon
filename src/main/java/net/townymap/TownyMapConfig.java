@@ -156,6 +156,25 @@ public class TownyMapConfig {
     public List<String> favoriteNations = new ArrayList<>();
     public List<String> favoritePlayers = new ArrayList<>();
     /**
+     * The entities you last opened from a search box, newest first. They live under the search bar's
+     * filter hints, which scroll to reveal them. Kinds are the same strings the favourites lists use,
+     * so one resolver serves both.
+     */
+    public List<RecentSearch> recentSearches = new ArrayList<>();
+    /** Off stops recording. What is already stored stays until it's cleared explicitly, so toggling
+     *  this off and on again doesn't quietly throw the list away. */
+    public boolean recordSearchHistory = true;
+
+    /**
+     * One remembered search: what was opened and when, never where it was. A town's centre moves as it
+     * claims and unclaims, so the jump is resolved fresh from the live town list every time instead of
+     * from a position frozen at the moment you searched.
+     */
+    public record RecentSearch(String kind, String name, long atMs) {}
+
+    /** How many searches are kept. The stack shows four rows at a time, so ten is a couple of scrolls. */
+    public static final int MAX_RECENT_SEARCHES = 10;
+    /**
      * squaremap world the saved selection was drawn in. Chunk keys are raw coordinates with no world
      * attached, so without this a selection made on Terra Nostra reappeared over the Moon. Defaults to
      * the overworld so selections saved before the Moon existed keep working.
@@ -340,6 +359,23 @@ public class TownyMapConfig {
         }
         if (favoriteNations == null) favoriteNations = new ArrayList<>();
         if (favoritePlayers == null) favoritePlayers = new ArrayList<>();
+        // A hand-edited or half-written history must not reach the renderer: a null name there would
+        // draw a row that cannot be clicked, and an over-long list would climb the screen.
+        if (recentSearches == null) {
+            recentSearches = new ArrayList<>();
+            changed = true;
+        } else {
+            ArrayList<RecentSearch> cleaned = new ArrayList<>();
+            for (RecentSearch r : recentSearches) {
+                if (r == null || r.kind() == null || r.name() == null || r.name().isBlank()) continue;
+                cleaned.add(r);
+                if (cleaned.size() >= MAX_RECENT_SEARCHES) break;
+            }
+            if (!cleaned.equals(recentSearches)) {
+                recentSearches = cleaned;
+                changed = true;
+            }
+        }
         if (favoriteTowns == null) {
             favoriteTowns = new ArrayList<>();
             changed = true;

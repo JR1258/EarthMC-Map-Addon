@@ -4707,6 +4707,11 @@ public class TownyMapMod implements ClientModInitializer {
         return config == null ? List.of() : List.copyOf(config.favoritePlayers);
     }
 
+    /** Bumped whenever the history changes, so the search bar can cache its rows and still react at once. */
+    private static volatile int searchHistoryVersion = 0;
+
+    public static int searchHistoryVersion() { return searchHistoryVersion; }
+
     /** What you last opened from a search box, newest first, for the search bar's scrollable stack. */
     public static List<TownyMapConfig.RecentSearch> recentSearches() {
         return config == null || !config.recordSearchHistory
@@ -4735,12 +4740,14 @@ public class TownyMapMod implements ClientModInitializer {
         while (config.recentSearches.size() > TownyMapConfig.MAX_RECENT_SEARCHES) {
             config.recentSearches.remove(config.recentSearches.size() - 1);
         }
+        searchHistoryVersion++;
         config.save();
     }
 
     public static void clearSearchHistory() {
         if (config == null || config.recentSearches.isEmpty()) return;
         config.recentSearches.clear();
+        searchHistoryVersion++;
         config.save();
     }
 

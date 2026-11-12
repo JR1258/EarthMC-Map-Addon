@@ -40,11 +40,28 @@ public class TownyMapConfig {
     /**
      * Which minimap background the player indicator is drawn over: 0 = never draw ours, 1 = only when
      * the EMC overlay is on, 2 = only when it's off (Xaero's own terrain), 3 = both. Xaero draws its
-     * arrow before our overlay, so the EMC layer hides it and ours stands in; over Xaero's terrain ours
-     * lands on its own arrow. Note that 0 leaves no arrow at all while the EMC layer is on, since the
-     * one Xaero draws is underneath it.
+     * arrow before our overlay, so the EMC layer hides it and ours stands in; over Xaero's own terrain
+     * its arrow is already there and ours only lands on top of it.
+     * <p>
+     * Hence the default of 1. Modes 2 and 3 ask our arrow to be a pixel-exact copy of one that is
+     * already on screen, which means matching Xaero's sprite, its 0.25x ARROW_SCALE sizing and its
+     * north-lock -- two of those read by reflection into Xaero's own config. When any of it drifts the
+     * only thing the user sees is two arrows at two sizes, so the mode's entire visible effect is its
+     * failure mode. Was 3 up to 1.4.11; see {@link #indicatorModeDefaultMigrated}.
+     * <p>
+     * Note that 0 leaves no arrow at all while the EMC layer is on, since the one Xaero draws is
+     * underneath it.
      */
-    public int minimapIndicatorMode = 3;
+    public int minimapIndicatorMode = 1;
+    /**
+     * One-time marker for the {@link #minimapIndicatorMode} default dropping from 3 ("Both") to 1
+     * ("EMC") in 1.4.12. Gson writes out every field, so every config saved before that change pins
+     * the old default and would never pick up the new one. The field is absent from those configs, so
+     * it deserialises false and {@code sanitize()} moves that one value across exactly once; a config
+     * born after the change is marked in {@code load()}, and anyone who picks "Both" deliberately
+     * afterwards keeps it.
+     */
+    public boolean indicatorModeDefaultMigrated = false;
     public boolean minimapNationAlertEnabled = true;
     public boolean minimapTownNamesEnabled = true;
     // ── Info display (text lines under the minimap, stacked with Xaero's coords) ──
@@ -279,6 +296,7 @@ public class TownyMapConfig {
             }
         }
         TownyMapConfig defaults = new TownyMapConfig();
+        defaults.indicatorModeDefaultMigrated = true; // born with the new default; nothing to move
         defaults.save();
         return defaults;
     }
@@ -295,6 +313,19 @@ public class TownyMapConfig {
         }
         if (squaremapBackgroundMode < 0 || squaremapBackgroundMode > 3) {
             squaremapBackgroundMode = 0;
+            changed = true;
+        }
+        // The player indicator's default dropped from "Both" to "EMC": over Xaero's own terrain ours
+        // was never anything but a copy of the arrow Xaero had already drawn. Gson persists every
+        // field, so an existing config pins the old default and has to be moved by hand. Once only,
+        // and only from that exact value, so a deliberate "Both" survives.
+        if (!indicatorModeDefaultMigrated) {
+            if (minimapIndicatorMode == 3) minimapIndicatorMode = 1;
+            indicatorModeDefaultMigrated = true;
+            changed = true;
+        }
+        if (minimapIndicatorMode < 0 || minimapIndicatorMode > 3) {
+            minimapIndicatorMode = 1;
             changed = true;
         }
         // No control for this any more, so a config that still has it off would be permanently stuck.
@@ -531,7 +562,12 @@ public class TownyMapConfig {
     private static final java.util.Set<String> PRESERVED_ON_RESET = java.util.Set.of(
             "favoriteTowns", "favoriteNations", "favoritePlayers",
             "chunkCounterSelection", "chunkCounterGroups",
-            "activeChunkCounterGroup", "chunkCounterGroupCount");
+            "activeChunkCounterGroup", "chunkCounterGroupCount",
+            // What the user has collected, not a setting: resetting the options should not empty it.
+            "recentSearches",
+            // Bookkeeping. Copying a fresh false over it would re-run the migration and could drag a
+            // deliberate "Both" back to "EMC" one launch later.
+            "indicatorModeDefaultMigrated");
 
     /**
      * Copies every persisted field of this config into {@code target}. "Reset All" uses a freshly

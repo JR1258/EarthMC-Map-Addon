@@ -1458,7 +1458,9 @@ public class WorldMapRenderer {
     }
 
     private boolean isFavorite(String townName) {
-        return favoriteTownKeys.contains(townName == null ? "" : townName.toLowerCase(Locale.ROOT));
+        // Asked per town per frame, and lowercasing allocates. Nothing to match against an empty set.
+        if (favoriteTownKeys.isEmpty() || townName == null) return false;
+        return favoriteTownKeys.contains(townName.toLowerCase(Locale.ROOT));
     }
 
     private int statusHighlightRgb() {

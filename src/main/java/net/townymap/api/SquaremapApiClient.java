@@ -683,15 +683,34 @@ public class SquaremapApiClient {
         return changed ? List.copyOf(merged) : current;
     }
 
+    /** How long EarthMC's copy is used after the map's fails, before the map's is tried again. */
+    private static final long PLAYERS_FALLBACK_MS = 300_000L;
+    private volatile long playersFallbackUntil = 0L;
+    private final java.util.concurrent.atomic.AtomicBoolean playersFallbackLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
     private void fetchPlayers() {
         try {
-            String json = get(config.playersUrl());
+            long now = System.currentTimeMillis();
+            // Exactly one request per poll either way. The switch is stamped before the request that
+            // would justify it, so a feed that is simply down can never turn this into a retry loop.
+            boolean onFallback = now < playersFallbackUntil;
+            String url = onFallback ? config.playersFallbackUrl() : config.playersUrl();
+            String json = get(url);
             if (json == NOT_MODIFIED) return;   // same positions as last poll; nothing to re-parse
-            if (json != null) {
-                List<PlayerMarker> parsed = List.copyOf(parsePlayers(json));
-                players = parsed;
-                rememberPlayers(parsed);
+            if (json == null) {
+                if (!onFallback) {
+                    playersFallbackUntil = now + PLAYERS_FALLBACK_MS;
+                    if (playersFallbackLogged.compareAndSet(false, true)) {
+                        LOGGER.info("[TownyMap] The map's player feed is not answering; falling back to"
+                                + " EarthMC's copy. The map's will be tried again periodically.");
+                    }
+                }
+                return;
             }
+            List<PlayerMarker> parsed = List.copyOf(parsePlayers(json));
+            players = parsed;
+            rememberPlayers(parsed);
         } finally {
             playerFetchRunning.set(false);
         }

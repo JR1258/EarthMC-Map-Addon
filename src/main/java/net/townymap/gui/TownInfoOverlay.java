@@ -89,16 +89,6 @@ public final class TownInfoOverlay {
         return loading ? null : currentData;
     }
 
-    /** Folds an on-demand active-resident count into the open panel's town (looked up off the base
-     *  fetch). No-op if the panel has since moved to a different town. */
-    public static void setActiveResidentCount(String townName, int count) {
-        TownPopupData d = currentData;
-        if (d != null && d != TownPopupData.WILDERNESS && townName != null
-                && townName.equalsIgnoreCase(d.townName())) {
-            currentData = d.withActiveResidentCount(count);
-        }
-    }
-
     public static void render(GuiGraphicsExtractor ctx, int sw, int sh, boolean favorite,
                               Map<String, EarthMcNationData> nationDetails) {
         infoLinks.clear();

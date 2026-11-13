@@ -30,7 +30,8 @@ public final class TownHoverOverlay {
     private TownHoverOverlay() {}
 
     public static void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, int sw, int sh,
-                              TownData town, TownPopupData details, String mapMayor, String mapNation) {
+                              TownData town, TownPopupData details, String mapMayor, String mapNation,
+                              int mapChunks) {
         Minecraft mc = Minecraft.getInstance();
         Font tr = mc.font;
 
@@ -41,7 +42,7 @@ public final class TownHoverOverlay {
         if (!nation.isBlank()) title += " §7§l(" + nation + ")";
         lines.add(title);
         lines.add("§7Mayor: §f" + mayor(details, mapMayor));
-        lines.add("§7Chunks: §f" + chunks(town, details));
+        lines.add("§7Chunks: §f" + chunks(town, details, mapChunks));
         lines.add("§8Right-click for more info");
 
         int maxW = 0;
@@ -167,13 +168,15 @@ public final class TownHoverOverlay {
         return "";   // nationless town → caller omits the parenthetical
     }
 
-    private static int chunks(TownData town, TownPopupData details) {
-        // Off Earth the API's numChunks is the town's total across all worlds, so it would report the
-        // whole Earth town for a hovered outpost. The polygon under the cursor is the honest answer.
+    private static int chunks(TownData town, TownPopupData details, int mapChunks) {
+        // Off Earth both totals are the town's across all worlds, so either would report the whole
+        // Earth town for a hovered outpost. The polygon under the cursor is the honest answer there.
         if (!TownyMapMod.viewingEarth()) return town.approximateChunks();
         if (details != null && details != TownPopupData.WILDERNESS && details.numChunks() > 0) {
-            return details.numChunks();
+            return details.numChunks();   // the API's own figure, when something has already fetched it
         }
+        // Otherwise the map's borders, summed over every world -- the same number, at no cost.
+        if (mapChunks > 0) return mapChunks;
         return town.approximateChunks();
     }
 }

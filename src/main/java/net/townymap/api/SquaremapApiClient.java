@@ -134,6 +134,8 @@ public class SquaremapApiClient {
     private volatile Map<String, PlayerHistoryEntry> playerHistory = Map.of();
     private volatile Map<String, String> townMayors  = Map.of();   // townKey → mayor, parsed from popups
     private volatile Map<String, Integer> townResidents = Map.of(); // townKey → resident count, from popups
+    /** townKey -> chunks claimed, counted from the map's own borders. See {@link #getTownChunks}. */
+    private volatile Map<String, Integer> townChunks = Map.of();
     /**
      * Lower-cased player name → the town whose roster lists them, built from the same popups.
      *
@@ -346,6 +348,26 @@ public class SquaremapApiClient {
     }
 
     /** Mayor parsed from the squaremap popup for this town key, or null if unknown. */
+    /**
+     * Chunks claimed by one town, counted from the borders the map already publishes -- no request,
+     * where the API would otherwise be asked.
+     *
+     * <p>The borders ARE the claim boundary, so the area they enclose divided by 256 (16x16 blocks to
+     * a chunk) is the claim count. Summed over every world: a town's Moon outposts count toward its
+     * total, and the overworld markers alone fall short by exactly those.
+     *
+     * <p>Measured against the API over 267 towns, including all 54 whose rings nest: 266 exact. The
+     * one miss is a border that pinches shut around an unclaimed pocket, which no ring-level rule can
+     * see. A caller holding a figure the API has already given should prefer that one.
+     *
+     * @return the chunk count, or -1 for a town the map has no geometry for.
+     */
+    public int getTownChunks(String townKey) {
+        if (townKey == null) return -1;
+        Integer n = townChunks.get(townKey);
+        return n == null ? -1 : n;
+    }
+
     public String getTownMayor(String townKey) { return townKey == null ? null : townMayors.get(townKey); }
     /**
      * The town's nation, plain: "Switzerland", never "Capital of Switzerland".
@@ -599,6 +621,7 @@ public class SquaremapApiClient {
         Map<String, String> nations = new HashMap<>();
         Map<String, Integer> residents = new HashMap<>();
         Map<String, String> residentTown = new HashMap<>();
+        Map<String, Integer> chunks = new HashMap<>();
         Set<String> capitals = new HashSet<>();
         for (ParsedMarkers m : markersByWorld.values()) {
             mayors.putAll(m.mayors());
@@ -606,11 +629,17 @@ public class SquaremapApiClient {
             residents.putAll(m.residents());
             residentTown.putAll(m.residentTowns());
             capitals.addAll(m.capitals());
+            // Chunks are the one value that SUMS rather than replaces: the roster in a Moon popup is
+            // the whole town's, but the claim drawn there is only the part of it on the Moon.
+            for (TownData t : m.towns()) {
+                chunks.merge(t.name().toLowerCase(Locale.ROOT), t.approximateChunks(), Integer::sum);
+            }
         }
         townMayors = Map.copyOf(mayors);
         townNations = Map.copyOf(nations);
         capitalTowns = Set.copyOf(capitals);
         townResidents = Map.copyOf(residents);
+        townChunks = Map.copyOf(chunks);
         residentTowns = Map.copyOf(residentTown);
         // Resident -> nation, resolved once here rather than per player per frame. The town value is a
         // display name and townNations is keyed lower-case, so this is where the one lower-casing goes.

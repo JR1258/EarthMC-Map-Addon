@@ -1440,7 +1440,6 @@ public final class TownSearchOverlay {
 
     private static List<InfoRow> townInfo(TownData town, TownPopupData details,
                                           Map<String, EarthMcNationData> nationDetails) {
-        TownyMapMod.requestTownActive(town.name());   // active count on-demand for the opened town only
         ArrayList<InfoRow> lines = new ArrayList<>();
         lines.add(InfoRow.text("§f§lTown: " + town.name()));
         if (details == null) {

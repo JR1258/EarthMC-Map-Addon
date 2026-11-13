@@ -624,6 +624,13 @@ public class SquaremapApiClient {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         out.add(TownyMapMod.activeWorldKey());
         out.add(TownyMapMod.playerWorldResolved());
+        // Both of EarthMC's worlds, always -- a town's claim total spans them, and its roster is
+        // published in each. Loading only the world on screen undercounted every town with a Moon
+        // outpost: Nile read 465 chunks against the API's 484, the missing 19 being its Moon claim.
+        // Cheap to keep current: these requests are conditional, so an unchanged world costs a 304,
+        // and the Moon file is a fourteenth the size of the overworld's.
+        out.add(TownyMapMod.WORLD_OVERWORLD);
+        out.add(TownyMapMod.WORLD_MOON);
         return out;
     }
 

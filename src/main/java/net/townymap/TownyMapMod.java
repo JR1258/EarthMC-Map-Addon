@@ -3734,6 +3734,12 @@ public class TownyMapMod implements ClientModInitializer {
         TownSearchOverlay.reset();   // right-clicking a new town clears any active search bar/result
         String fallbackKey = clickedTown == null ? "" : townKey(clickedTown.name());
         TownPopupData fallback = clickedTown == null ? null : townDetailsCache.get(fallbackKey);
+        // With no usable key the API will not be asked at all, so without this the panel simply never
+        // opens. The map already knows most of what the card shows; open it with that and let the
+        // fetch, if one happens, replace it.
+        if (fallback == null && clickedTown != null && !isArchiveMode()) {
+            fallback = mapOnlyTownData(clickedTown);
+        }
         MapJumpTarget fallbackTarget = clickedTown == null ? null
                 : new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
         long lookupId = townLookupId.incrementAndGet();
@@ -4149,6 +4155,35 @@ public class TownyMapMod implements ClientModInitializer {
      * suffix can never appear. Never lowers the count: if the markers are stale or the town is missing
      * from them, the API's figure stands.
      */
+    /**
+     * Everything the live map knows about a town, as a card in its own right.
+     *
+     * <p>Used when the API cannot answer -- no key, a refused key, or a lookup that simply failed.
+     * The map carries the town's name, nation, mayor, founding date, PVP and Public flags, its full
+     * resident roll and, from the borders being drawn, its claim size. What it has no copy of is the
+     * balance, whether the town is open or for sale, and the claim maximum, so the card marks itself
+     * {@code mapOnly} and the overlay omits those rows rather than printing a default as though it
+     * were a fact.
+     */
+    private static TownPopupData mapOnlyTownData(TownData town) {
+        if (apiClient == null || town == null) return null;
+        String key = townKey(town.name());
+        String nation = apiClient.getTownNation(key);
+        net.townymap.api.SquaremapApiClient.MapTownFacts f = apiClient.getTownFacts(key);
+        String mayor = apiClient.getTownMayor(key);
+        int residents = Math.max(0, apiClient.getTownResidents(key));
+        int chunks = apiClient.getTownChunks(key);
+        if (chunks <= 0) chunks = town.approximateChunks();
+        boolean hasNation = nation != null && !nation.isBlank();
+        return new TownPopupData(
+                town.name(), hasNation ? nation : "", "", "",
+                mayor == null || mayor.isBlank() ? "?" : mayor,
+                chunks, f == null ? "" : f.founded(), f != null && f.pvp(),
+                f != null && f.isPublic(),
+                false, false, false, false,            // API-only; mapOnly tells the card to skip them
+                hasNation, residents, 0, -1, -1, true);
+    }
+
     private static TownPopupData withMapTotals(String key, TownPopupData data) {
         if (apiClient == null || data == null) return data;
         // An archived popup is that date's; the live markers are today's, so leave it alone.

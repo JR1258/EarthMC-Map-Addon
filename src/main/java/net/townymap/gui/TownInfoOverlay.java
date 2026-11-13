@@ -292,6 +292,9 @@ public final class TownInfoOverlay {
         }
         if (archive) {
             lines.add(InfoRow.text("§7PVP: §f§l"   + (d.pvp() ? "Yes" : "No")));   // archive records PVP, not Open
+        } else if (d.mapOnly()) {
+            // The map states PVP outright but says nothing about Open, so show the one it knows.
+            lines.add(InfoRow.text("§7PVP: §f§l"   + (d.pvp() ? "Yes" : "No")));
         } else {
             lines.add(InfoRow.text("§7Open: §f§l"  + (d.isOpen() ? "Yes" : "No")));
         }
@@ -301,8 +304,12 @@ public final class TownInfoOverlay {
             residentsLine += " §8(" + (d.residentCount() - d.activeResidentCount()) + " Inactive)";
         }
         lines.add(InfoRow.text(residentsLine));
-        if (!archive) {
+        if (!archive && !d.mapOnly()) {
             lines.add(InfoRow.text("§7Gold: §f§l"  + formatGold(d.balance())));
+        }
+        if (d.mapOnly()) {
+            // Say why the card is short, rather than leaving someone to wonder what happened to it.
+            lines.add(InfoRow.text("§8Map data only - set an API key for gold, open and claim limit"));
         }
 
         return lines;

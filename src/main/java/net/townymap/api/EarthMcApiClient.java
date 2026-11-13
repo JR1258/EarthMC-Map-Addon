@@ -74,6 +74,11 @@ public class EarthMcApiClient {
 
     public boolean hasApiKey() { return !apiKey.isEmpty(); }
 
+    /** How many characters the stored key has -- never the key itself. A refusal caused by a key that
+     *  arrived cut short is otherwise indistinguishable from a wrong one, and this is what separates
+     *  them at a glance. */
+    public int apiKeyLength() { return apiKey.length(); }
+
     /** EarthMC's own API, and nothing else -- the one thing standing between the key and every other
      *  host this mod contacts. Anything unparseable is treated as "not EarthMC", so a malformed URL
      *  fails closed and carries no key. */

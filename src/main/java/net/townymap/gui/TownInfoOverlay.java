@@ -315,8 +315,10 @@ public final class TownInfoOverlay {
         if (!archive && !d.mapOnly()) {
             lines.add(InfoRow.text("§7Gold: §f§l"  + formatGold(d.balance())));
         }
+        // Reached only when this card IS the answer -- no key, or a request that failed. The
+        // right-click path no longer shows a map-built card while a fetch is in flight, so this note
+        // cannot flash up and vanish the way it did.
         if (d.mapOnly()) {
-            // Say why the card is short, rather than leaving someone to wonder what happened to it.
             lines.add(InfoRow.text("§8Map data only - set an API key for gold, open, claim limit"));
             lines.add(InfoRow.text("§8and the active resident count"));
         }

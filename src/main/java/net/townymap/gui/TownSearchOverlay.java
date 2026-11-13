@@ -1302,11 +1302,16 @@ public final class TownSearchOverlay {
             ArrayList<InfoRow> lines = new ArrayList<>();
             lines.add(InfoRow.text("§f§lNation: " + selectedName));
             if (details == null) {
-                // Nations are not markers, but their towns are, and every town's tooltip names its
-                // nation -- so the capital, the town count and the totals across them are all on the
-                // map already. Show those rather than sitting on "Checking...", which is what this
-                // card did for ever whenever the API could not answer: no key, or a nation it has no
-                // record of. Anything the API lands later simply replaces this.
+                // While a usable key means the real record is moments away, wait for it: filling the
+                // card from the map first and swapping it a moment later makes the panel change shape
+                // under the reader, which is more distracting than a brief "Checking...".
+                if (TownyMapMod.apiKeyState().usable() && !TownyMapMod.nationLookupFailed(selectedName)) {
+                    lines.add(InfoRow.text("§7Details: §fChecking..."));
+                    return List.copyOf(lines);
+                }
+                // Otherwise this is the answer. Nations are not markers, but their towns are, and
+                // every town's tooltip names its nation -- so the capital, the town count and the
+                // totals across them are all on the map already.
                 net.townymap.api.SquaremapApiClient api = TownyMapMod.getApiClient();
                 net.townymap.api.SquaremapApiClient.MapNationFacts f =
                         api == null ? null : api.getNationFacts(selectedName);
@@ -1326,9 +1331,8 @@ public final class TownSearchOverlay {
                 lines.add(InfoRow.text("§7Towns: §f" + f.townCount()));
                 lines.add(InfoRow.text("§7Residents: §f" + f.residentCount()));
                 lines.add(InfoRow.text("§7Chunks: §f" + f.chunkCount()));
-                // Say which of the two it is: still waiting, or never going to arrive.
                 lines.add(InfoRow.text(TownyMapMod.apiKeyState().usable()
-                        ? "§8From map data - checking EarthMC for the rest..."
+                        ? "§8From map data - EarthMC has no record of this nation"
                         : "§8From map data - set an API key for king, founded and bonus"));
                 return List.copyOf(lines);
             }
@@ -1411,6 +1415,13 @@ public final class TownSearchOverlay {
             lines.add(InfoRow.text("§7On map: §f" + dateWithAgo(history.lastSeenMs())));
         }
         if (details == null) {
+            // Same reasoning as the nation card: with a usable key and no failure recorded yet, the
+            // record is still coming, so wait rather than drawing a roster card that is about to be
+            // replaced.
+            if (TownyMapMod.apiKeyState().usable() && !TownyMapMod.playerLookupFailed(selectedName)) {
+                lines.add(InfoRow.text("§7Details: §fChecking..."));
+                return List.copyOf(lines);
+            }
             // The EarthMC API has an opt-out, and for those players the lookup never returns -- the card
             // used to sit on "Checking..." forever. Town rosters in markers.json are TOWN data with no
             // opt-out, so fall back to those: it gives the town, and the nation through it. Labelled as
@@ -1428,6 +1439,8 @@ public final class TownSearchOverlay {
                     String label = api.isTownCapital(rosterKey) ? "§7Capital of: §f" : "§7Nation: §f";
                     lines.add(InfoRow.link(label, rosterNation, "nation"));
                 }
+                // Reached only when the lookup has already failed, or there is no key to make it
+                // with, so this is the card's final state and the note cannot flash up and vanish.
                 lines.add(InfoRow.text("§8From map data (not on the API)"));
             } else {
                 // Still say something terminal. An endless "Checking..." reads as broken.

@@ -441,7 +441,11 @@ public class TownyMapConfigScreen extends Screen {
         apiKeyField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("EarthMC API Key"));
         apiKeyField.setHint(Component.literal(cfg.earthMcApiKey.isEmpty()
                 ? "/api key create" : "set - type a new key to replace"));
-        apiKeyField.setMaxLength(128);
+        // Generous on purpose. A real EarthMC key is a signed token, not a short id -- a live one
+        // measured 171 characters -- and an EditBox does not say it truncated, it just silently
+        // drops the tail. A key cut short is a key EarthMC refuses, with nothing on screen to
+        // explain why, so this must never be tightened to a guess at the current length.
+        apiKeyField.setMaxLength(512);
         inputRow("EarthMC API Key", apiKeyField);
         action(apiKeyButtonLabel(), this::submitApiKey);
         if (!cfg.earthMcApiKey.isEmpty()) action("Clear API Key", this::clearApiKey);

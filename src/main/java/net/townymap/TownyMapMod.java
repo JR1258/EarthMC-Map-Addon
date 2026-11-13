@@ -4054,7 +4054,10 @@ public class TownyMapMod implements ClientModInitializer {
                 if (state == net.townymap.api.ApiKeyState.OK) {
                     sendFeedback("API key accepted.", ChatFormatting.GREEN);
                 } else if (state == net.townymap.api.ApiKeyState.REJECTED) {
-                    sendFeedback("EarthMC refused that API key. Run /api key create for a new one.",
+                    // The length, never the key. A paste that arrived cut short refuses exactly like a
+                    // wrong key, and this one number tells the two apart without guesswork.
+                    sendFeedback("EarthMC refused that API key (" + earthMcApi.apiKeyLength()
+                                    + " characters sent). Check it pasted whole, or run /api key create.",
                             ChatFormatting.RED);
                 } else {
                     sendFeedback("Could not reach EarthMC to check the key; it will be used anyway.",

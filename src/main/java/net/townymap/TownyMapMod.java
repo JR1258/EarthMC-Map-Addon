@@ -158,6 +158,7 @@ public class TownyMapMod implements ClientModInitializer {
         config     = TownyMapConfig.load();
         apiClient  = new SquaremapApiClient(config);
         earthMcApi = new EarthMcApiClient();
+        earthMcApi.setApiKey(config.earthMcApiKey);
         renderer   = new WorldMapRenderer(config, apiClient);
         ChunkCounterOverlay.loadSelection(config.chunkCounterSelection,
                 config.chunkCounterGroups, config.activeChunkCounterGroup);
@@ -554,6 +555,14 @@ public class TownyMapMod implements ClientModInitializer {
     public static MapDataStatus mapDataStatus() {
         if (apiClient == null) return new MapDataStatus("Claims unavailable", STATUS_BAD);
         if (apiClient.isArchiveActive()) return new MapDataStatus("Archive snapshot", STATUS_ARCHIVE);
+        // Claims come from the map and need no key, so this is not "unavailable" -- but with no usable
+        // key every API-backed panel is empty, and this line is the first place anyone looks.
+        if (earthMcApi != null && !earthMcApi.keyState().usable()) {
+            return new MapDataStatus(
+                    earthMcApi.keyState() == net.townymap.api.ApiKeyState.MISSING
+                            ? "API key needed - see Settings" : "API key refused - see Settings",
+                    STATUS_BAD);
+        }
 
         long ok = apiClient.lastClaimsSuccessMs();
         if (ok == 0) {
@@ -3975,6 +3984,41 @@ public class TownyMapMod implements ClientModInitializer {
             sendFeedback("Xaero route creation failed.", ChatFormatting.RED);
             return false;
         }
+    }
+
+    /** Where the API key stands, for the settings screen. Never exposes the key itself. */
+    public static net.townymap.api.ApiKeyState apiKeyState() {
+        return earthMcApi == null ? net.townymap.api.ApiKeyState.MISSING : earthMcApi.keyState();
+    }
+
+    /**
+     * Re-applies the configured API key and re-tests it. Called when the key is edited in settings, so
+     * a correction takes effect at once rather than at the next restart. The key itself never appears
+     * in a log line or a chat message -- only whether EarthMC accepted it.
+     */
+    public static void applyApiKey() {
+        if (earthMcApi == null || config == null) return;
+        earthMcApi.setApiKey(config.earthMcApiKey);
+        if (!earthMcApi.hasApiKey()) {
+            sendFeedback("API key cleared. EarthMC lookups are off; the map still works.",
+                    ChatFormatting.YELLOW);
+            return;
+        }
+        earthMcApi.verifyKey().thenAccept(state -> {
+            Minecraft c = Minecraft.getInstance();
+            if (c == null) return;
+            c.execute(() -> {
+                if (state == net.townymap.api.ApiKeyState.OK) {
+                    sendFeedback("API key accepted.", ChatFormatting.GREEN);
+                } else if (state == net.townymap.api.ApiKeyState.REJECTED) {
+                    sendFeedback("EarthMC refused that API key. Run /api key create for a new one.",
+                            ChatFormatting.RED);
+                } else {
+                    sendFeedback("Could not reach EarthMC to check the key; it will be used anyway.",
+                            ChatFormatting.YELLOW);
+                }
+            });
+        });
     }
 
     private static void sendFeedback(String message, ChatFormatting color) {

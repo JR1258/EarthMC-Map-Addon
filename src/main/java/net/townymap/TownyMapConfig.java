@@ -23,6 +23,16 @@ public class TownyMapConfig {
     public boolean playersEnabled = true;
     public boolean earthmcOnly = true;
     /**
+     * EarthMC API key, issued in game by {@code /api key create}.
+     *
+     * <p>A secret. It is never written to the log and never leaves api.earthmc.net -- the mod also
+     * talks to map.earthmc.net, GitHub, the Wayback Machine, mc-heads and the alliance source, and
+     * none of them ever see it. Empty means every API-backed feature is off, which is what EarthMC
+     * itself will do from 2026-11-19; the map, its borders, town names and players need no key and
+     * keep working either way.
+     */
+    public String earthMcApiKey = "";
+    /**
      * Kept as a gate throughout the minimap rendering, but no longer user-facing: the settings row was
      * removed, so {@code sanitize()} forces it back on. Without that, anyone whose config had it off
      * would have no way left to turn the minimap overlay back on.
@@ -264,19 +274,29 @@ public class TownyMapConfig {
     public String worldsUrl() {
         return squaremapBaseUrl + "/tiles/settings.json";
     }
-    /**
-     * Live player positions.
-     *
-     * <p>Not a squaremap document any more: EarthMC replaced tiles/players.json with this endpoint on
-     * 2026-11-03. Same marker fields, so the parser is unchanged, but it lives on the API host rather
-     * than the map's, which is why it is a fixed URL instead of hanging off {@code squaremapBaseUrl}:
-     * a base-URL setting pointed somewhere else must not redirect requests meant for EarthMC's API, and
-     * if a key is ever needed here it must not be the thing that follows them. (As of 2026-11-07 no key
-     * is: see the note in EarthMcApiClient.)
-     */
+    /** EarthMC's own copy of the live player feed, on the API host. See {@link #playersUrl()}. */
     public static final String PLAYERS_URL = "https://api.earthmc.net/map/v1/players";
 
+    /**
+     * Live player positions, taken from the map's own document again.
+     *
+     * <p>This was moved to {@link #PLAYERS_URL} on 2026-11-03, when EarthMC appeared to have dropped
+     * the map's copy. The map's copy is serving live data again -- verified 2026-11-13: both carry the
+     * same seven fields per player, and over 40 seconds about 40 of the 85 players common to both had
+     * moved in each. Preferring it keeps the busiest poll in the mod off the API host entirely, where
+     * it needs no key and spends none of EarthMC's API budget.
+     *
+     * <p>It follows {@code squaremapBaseUrl} because it is a squaremap document once more. That was
+     * the reason the API form was a fixed URL -- a redirected base must never capture a request that
+     * carries credentials -- and it no longer applies: nothing authenticates here.
+     */
     public String playersUrl() {
+        return squaremapBaseUrl + "/tiles/players.json";
+    }
+
+    /** EarthMC's copy, used only while the map's is failing. This feed has changed hosts once already,
+     *  so the other one is kept rather than assumed gone. */
+    public String playersFallbackUrl() {
         return PLAYERS_URL;
     }
 
@@ -299,6 +319,15 @@ public class TownyMapConfig {
         defaults.indicatorModeDefaultMigrated = true; // born with the new default; nothing to move
         defaults.save();
         return defaults;
+    }
+
+    /** Tolerates a key pasted with the header prefix still on it, or with stray whitespace -- both
+     *  are easy to pick up copying out of chat or a web page. Never logs the value. */
+    public static String normalizeApiKey(String raw) {
+        if (raw == null) return "";
+        String k = raw.trim();
+        if (k.regionMatches(true, 0, "Bearer ", 0, 7)) k = k.substring(7).trim();
+        return k;
     }
 
     private boolean sanitize() {
@@ -328,6 +357,12 @@ public class TownyMapConfig {
             minimapIndicatorMode = 1;
             changed = true;
         }
+        String normalizedKey = normalizeApiKey(earthMcApiKey);
+        if (!normalizedKey.equals(earthMcApiKey)) {
+            earthMcApiKey = normalizedKey;
+            changed = true;
+        }
+
         // No control for this any more, so a config that still has it off would be permanently stuck.
         if (!minimapExtensionsEnabled) {
             minimapExtensionsEnabled = true;
@@ -563,6 +598,8 @@ public class TownyMapConfig {
             "favoriteTowns", "favoriteNations", "favoritePlayers",
             "chunkCounterSelection", "chunkCounterGroups",
             "activeChunkCounterGroup", "chunkCounterGroupCount",
+            // Not a setting, and re-issuing one is a trip in game: "Reset All" must not throw it away.
+            "earthMcApiKey",
             // What the user has collected, not a setting: resetting the options should not empty it.
             "recentSearches",
             // Bookkeeping. Copying a fresh false over it would re-run the migration and could drag a

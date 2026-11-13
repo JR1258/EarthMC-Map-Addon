@@ -38,16 +38,101 @@ public class EarthMcApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger("TownyMapAddon");
     private static final String BASE = "https://api.earthmc.net/v4";
 
-    // No API key handling here on purpose. EarthMC announced on 2026-11-03 that keys would be required
-    // from the 19th, and the groundwork written then has been taken out again, because nothing published
-    // has ever carried that requirement. Re-checked on 2026-11-07 against their own OpenAPI document at
-    // https://api.earthmc.net/docs: /v4/events is the ONLY operation that declares BearerAuth, and the
-    // three this mod uses -- POST /v4/towns, /v4/nations, /v4/players -- each say "optionally include API
-    // key". Nothing here answers 401 or 403, so a settings field and a chat warning that cannot fire
-    // would be noise for every user. What goes back in if that changes: an "Authorization: Bearer <key>"
-    // header (their documented format), a host check so the key reaches api.earthmc.net and none of the
-    // other hosts this mod talks to, and a 401/403 backoff. The spec above is the thing to re-read: it
-    // also carries the per-endpoint cooldowns, none of which touch the endpoints used here.
+    // ── API key ──────────────────────────────────────────────────────────────────────────────
+    // EarthMC requires a key in the Authorization header on EVERY endpoint from 2026-11-19, and stops
+    // reading the "key" field out of POST bodies at the same time. So the header is the only form sent
+    // here, and a missing or refused key is treated the way the server is about to treat it: the
+    // request is not made at all. Letting it run anonymously until the deadline would mean every user
+    // discovering the change simultaneously, on a day nobody is watching.
+    //
+    // The key goes to api.earthmc.net and nowhere else. This mod also talks to map.earthmc.net, GitHub,
+    // the Wayback Machine, mc-heads and the alliance source, and isEarthMcApi is what keeps it off all
+    // of them. The value is never logged, at any level.
+    private static final String API_HOST = "api.earthmc.net";
+    /** How long a refused key is held before one request is spent re-testing it. */
+    private static final long REJECTED_RECHECK_MS = 120_000L;
+    private volatile String apiKey = "";
+    private volatile ApiKeyState keyState = ApiKeyState.MISSING;
+    private volatile long rejectedCheckedAt = 0L;
+    private final java.util.concurrent.atomic.AtomicBoolean missingKeyLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean rejectedKeyLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Applies the configured key. The value itself is never logged, here or anywhere else. */
+    public void setApiKey(String key) {
+        String k = key == null ? "" : key.trim();
+        if (k.equals(apiKey)) return;
+        apiKey = k;
+        keyState = k.isEmpty() ? ApiKeyState.MISSING : ApiKeyState.UNVERIFIED;
+        rejectedCheckedAt = 0L;
+        missingKeyLogged.set(false);
+        rejectedKeyLogged.set(false);
+    }
+
+    public ApiKeyState keyState() { return keyState; }
+
+    public boolean hasApiKey() { return !apiKey.isEmpty(); }
+
+    /** EarthMC's own API, and nothing else -- the one thing standing between the key and every other
+     *  host this mod contacts. Anything unparseable is treated as "not EarthMC", so a malformed URL
+     *  fails closed and carries no key. */
+    private static boolean isEarthMcApi(String url) {
+        try {
+            return API_HOST.equalsIgnoreCase(URI.create(url).getHost());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Whether a request may be sent at all. False means no socket is opened. */
+    private boolean apiAllowed(String url) {
+        if (!isEarthMcApi(url)) return true;
+        if (apiKey.isEmpty()) {
+            keyState = ApiKeyState.MISSING;
+            if (missingKeyLogged.compareAndSet(false, true)) {
+                LOGGER.warn("[TownyMap] No EarthMC API key set, so API lookups are off. Run /api key"
+                        + " create in game, then put the key in Settings -> EarthMC API Key. The map"
+                        + " itself -- borders, town names, players -- needs no key and is unaffected.");
+            }
+            return false;
+        }
+        if (keyState == ApiKeyState.REJECTED) {
+            // Re-test now and then so a corrected key recovers without a restart. Stamp the ATTEMPT,
+            // never the success: a guard that arms only when the call works runs at frame rate when it
+            // doesn't, which has bitten this codebase twice already.
+            long now = System.currentTimeMillis();
+            if (now - rejectedCheckedAt < REJECTED_RECHECK_MS) return false;
+            rejectedCheckedAt = now;
+        }
+        return true;
+    }
+
+    private void noteKeyRefused(int status) {
+        keyState = ApiKeyState.REJECTED;
+        rejectedCheckedAt = System.currentTimeMillis();
+        if (rejectedKeyLogged.compareAndSet(false, true)) {
+            LOGGER.warn("[TownyMap] EarthMC refused the API key (HTTP {}). Check it in Settings ->"
+                    + " EarthMC API Key, or run /api key create in game for a fresh one.", status);
+        }
+    }
+
+    /**
+     * Tests the key against EarthMC's own /authtest endpoint, which exists for exactly this.
+     * Forces the attempt even while a refusal is being held, since the user asked for it.
+     */
+    public CompletableFuture<ApiKeyState> verifyKey() {
+        return CompletableFuture.supplyAsync(() -> {
+            if (apiKey.isEmpty()) {
+                keyState = ApiKeyState.MISSING;
+                return keyState;
+            }
+            rejectedCheckedAt = 0L;
+            rejectedKeyLogged.set(false);
+            get(BASE + "/authtest");   // the shared paths below set OK or REJECTED from the response
+            return keyState;
+        }, executor);
+    }
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMM d yyyy");
@@ -1052,6 +1137,8 @@ public class EarthMcApiClient {
     }
 
     private String post(String url, String body) {
+        if (!apiAllowed(url)) return null;
+        boolean earthMc = isEarthMcApi(url);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -1060,8 +1147,16 @@ public class EarthMcApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .POST(HttpRequest.BodyPublishers.ofString(body));
+            if (earthMc) builder.header("Authorization", "Bearer " + apiKey);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 200) return decodeBody(resp);
+            if (resp.statusCode() == 200) {
+                if (earthMc) keyState = ApiKeyState.OK;
+                return decodeBody(resp);
+            }
+            if (earthMc && (resp.statusCode() == 401 || resp.statusCode() == 403)) {
+                noteKeyRefused(resp.statusCode());
+                return null;
+            }
             // 404 just means "no such entity" (an opt-out, usually) and is expected; logging one line per
             // lookup buried the log. 429 means we are rate-limited and every other request is failing too,
             // so say that once rather than several hundred times.
@@ -1082,6 +1177,8 @@ public class EarthMcApiClient {
     }
 
     private String get(String url) {
+        if (!apiAllowed(url)) return null;
+        boolean earthMc = isEarthMcApi(url);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -1089,8 +1186,16 @@ public class EarthMcApiClient {
                     .header("User-Agent", net.townymap.util.UserAgent.get())
                     .header("Accept-Encoding", "gzip")
                     .GET();
+            if (earthMc) builder.header("Authorization", "Bearer " + apiKey);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 200) return decodeBody(resp);
+            if (resp.statusCode() == 200) {
+                if (earthMc) keyState = ApiKeyState.OK;
+                return decodeBody(resp);
+            }
+            if (earthMc && (resp.statusCode() == 401 || resp.statusCode() == 403)) {
+                noteKeyRefused(resp.statusCode());
+                return null;
+            }
             LOGGER.warn("[TownyMap] EarthMC API {} -> HTTP {}", url, resp.statusCode());
         } catch (Exception e) {
             LOGGER.warn("[TownyMap] EarthMC API request failed: {}", e.getMessage());

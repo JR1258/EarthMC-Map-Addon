@@ -159,6 +159,7 @@ public class TownyMapConfigScreen extends Screen {
     private TownyMapConfig cfg;
     private TextFieldWidget searchField;
     private TextFieldWidget archiveField;   // Advanced → type a dd/mm/yyyy date + Enter to open the archive
+    private TextFieldWidget apiKeyField;    // Advanced → the EarthMC API key; never pre-filled
     private ButtonWidget screenshotKeyButton;
     private ButtonWidget refreshKeyButton;
     private ButtonWidget statsKeyButton;   // Advanced → rebind the clean-map-screenshot key
@@ -435,6 +436,19 @@ public class TownyMapConfigScreen extends Screen {
         action("Reload Overlays", () -> net.townymap.integration.CustomOverlayManager.reload());
 
 
+        // EarthMC requires a key on every endpoint from 2026-11-19, so this row is what turns the
+        // API-backed panels on. The stored key is deliberately NOT loaded into the box: a settings
+        // screen gets screenshotted and streamed, and a secret that is never drawn cannot leak that
+        // way. Typing a new one replaces it; the button below clears it.
+        apiKeyField = new TextFieldWidget(this.textRenderer, ctrlX, 0, CTRL_W, 20,
+                Text.literal("EarthMC API Key"));
+        apiKeyField.setPlaceholder(Text.literal(cfg.earthMcApiKey.isEmpty()
+                ? "/api key create" : "set - type a new key to replace"));
+        apiKeyField.setMaxLength(128);
+        inputRow("EarthMC API Key", apiKeyField);
+        action(apiKeyButtonLabel(), this::submitApiKey);
+        if (!cfg.earthMcApiKey.isEmpty()) action("Clear API Key", this::clearApiKey);
+
         archiveField = new TextFieldWidget(this.textRenderer, ctrlX, 0, CTRL_W, 20, Text.literal("dd/mm/yyyy"));
         archiveField.setPlaceholder(Text.literal("dd/mm/yyyy"));
         archiveField.setMaxLength(14);
@@ -697,6 +711,12 @@ public class TownyMapConfigScreen extends Screen {
             if (screenshotKeyButton != null) screenshotKeyButton.setMessage(screenshotKeyLabel());
             return true;
         }
+        // Enter in the key field saves and tests it, rather than making the user find the button.
+        if (apiKeyField != null && apiKeyField.isFocused()
+                && (input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER)) {
+            submitApiKey();
+            return true;
+        }
         // Enter in the archive-date field opens that day's archive and closes settings.
         if (archiveField != null && archiveField.isFocused()
                 && (input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER)) {
@@ -704,6 +724,40 @@ public class TownyMapConfigScreen extends Screen {
             return true;
         }
         return super.keyPressed(input);
+    }
+
+    /**
+     * Saves a newly typed key, then asks EarthMC to confirm it. An empty box means "just re-test the
+     * key I already have", so the button works as both. The value is never logged or echoed back.
+     */
+    private void submitApiKey() {
+        String typed = TownyMapConfig.normalizeApiKey(apiKeyField.getText());
+        if (!typed.isEmpty()) {
+            cfg.earthMcApiKey = typed;
+            cfg.save();
+            apiKeyField.setText("");   // do not leave it sitting on screen
+        }
+        TownyMapMod.applyApiKey();
+        this.clearAndInit();     // the button label carries the new state
+    }
+
+    private void clearApiKey() {
+        cfg.earthMcApiKey = "";
+        cfg.save();
+        apiKeyField.setText("");
+        TownyMapMod.applyApiKey();
+        this.clearAndInit();
+    }
+
+    /** The button doubles as the status readout -- there is nowhere else on the row to put it. */
+    private String apiKeyButtonLabel() {
+        net.townymap.api.ApiKeyState state = TownyMapMod.apiKeyState();
+        return switch (state) {
+            case OK -> "API Key: accepted - click to re-test";
+            case REJECTED -> "API Key: REFUSED by EarthMC - click to re-test";
+            case UNVERIFIED -> "API Key: set, not yet checked - click to test";
+            case MISSING -> "API Key: not set - EarthMC lookups are off";
+        };
     }
 
     private void submitArchive() {

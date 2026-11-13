@@ -4176,7 +4176,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (chunks <= 0) chunks = town.approximateChunks();
         boolean hasNation = nation != null && !nation.isBlank();
         return new TownPopupData(
-                town.name(), hasNation ? nation : "", "", "",
+                town.name(), hasNation ? nation : "", "", f == null ? "" : f.board(),
                 mayor == null || mayor.isBlank() ? "?" : mayor,
                 chunks, f == null ? "" : f.founded(), f != null && f.pvp(),
                 f != null && f.isPublic(),

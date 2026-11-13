@@ -3968,7 +3968,7 @@ public class TownyMapMod implements ClientModInitializer {
             if (data != TownPopupData.WILDERNESS) data = withMapTotals(townKey(data.townName()), data);
             // Don't persist archived popups into the live (disk-backed) details cache — that would leak
             // historical data into the live map on the next session.
-            if (data != TownPopupData.WILDERNESS && !isArchiveMode()) {
+            if (data != TownPopupData.WILDERNESS && !isArchiveMode() && !data.mapOnly()) {
                 cacheTownDetails(townKey(data.townName()), data);
                 scheduleTownDetailsCacheSave();
             }
@@ -4125,6 +4125,11 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void cacheTownDetails(String requestedKey, TownPopupData data) {
         if (data == null || data == TownPopupData.WILDERNESS) return;
+        // A map-built card is a placeholder shown while the API is asked, not an answer. Caching one
+        // makes isTownDetailsFresh() report the town as already known, so the fetch that would
+        // complete it never runs and the card stays half-filled -- and it would be written to the
+        // on-disk cache and read back next session as though EarthMC had returned it.
+        if (data.mapOnly()) return;
         long now = System.currentTimeMillis();
         String canonicalKey = townKey(data.townName());
         if (requestedKey != null && !requestedKey.isBlank()) {
@@ -4993,9 +4998,16 @@ public class TownyMapMod implements ClientModInitializer {
             }
             Map<String, TownPopupData> loaded = GSON.fromJson(json, TOWN_CACHE_TYPE);
             if (loaded != null) {
-                townDetailsCache.putAll(loaded);
-                for (String key : loaded.keySet()) {
-                    townDetailsFetchedAt.put(key, 0L);
+                int placeholders = 0;
+                for (Map.Entry<String, TownPopupData> e : loaded.entrySet()) {
+                    // Placeholders are not answers, and a build before this check could write them.
+                    if (e.getValue() == null || e.getValue().mapOnly()) { placeholders++; continue; }
+                    townDetailsCache.put(e.getKey(), e.getValue());
+                    townDetailsFetchedAt.put(e.getKey(), 0L);
+                }
+                if (placeholders > 0) {
+                    LOGGER.info("[TownyMap] Dropped {} map-built placeholder(s) from the town cache",
+                            placeholders);
                 }
             }
         } catch (Exception e) {

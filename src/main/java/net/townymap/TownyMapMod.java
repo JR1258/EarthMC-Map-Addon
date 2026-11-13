@@ -3923,12 +3923,42 @@ public class TownyMapMod implements ClientModInitializer {
      * it to go. Called every tick; cheap, and does nothing unless the player is actually blocked.
      */
     public static void tickAccessNotice() {
-        if (blockedNoticeShown || !isAccessBlocked()) return;
+        if (blockedNoticeShown || !isAccessBlocked()) {
+            tickApiKeyNotice();
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null) return;           // wait until a world is loaded
         if (mc.gui.screen() instanceof net.townymap.gui.BlockedScreen) return;
         blockedNoticeShown = true;
         mc.gui.setScreen(new net.townymap.gui.BlockedScreen(mc.gui.screen(), blocklist.message()));
+    }
+
+    /**
+     * Puts the "you can add an API key" notice up once, ever.
+     *
+     * <p>Only on EarthMC, and only with no key set: there is nothing to say to someone who already
+     * has one, and nothing the key would do on another server. The flag is written the moment the
+     * screen goes up and saved with it, so this cannot repeat on the next launch -- and it is set
+     * even when the player already has a key, so nobody who set one early is shown it later if they
+     * ever clear it.
+     *
+     * <p>Rides on the same tick as the blocked notice, and defers to it: being told your access is
+     * gone and being told about an optional key in the same breath would be a poor pair.
+     */
+    private static void tickApiKeyNotice() {
+        if (config == null || config.apiKeyNoticeShown) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return;           // wait until a world is loaded
+        if (!isOnEarthMcServer()) return;                     // pointless anywhere else
+        net.minecraft.client.gui.screens.Screen open = mc.gui.screen();
+        if (open instanceof net.townymap.gui.BlockedScreen
+                || open instanceof net.townymap.gui.ApiKeyNoticeScreen) return;
+        config.apiKeyNoticeShown = true;
+        config.save();
+        // Someone who already pasted a key needs no instructions -- mark it seen and stay quiet.
+        if (!config.earthMcApiKey.isBlank()) return;
+        mc.gui.setScreen(new net.townymap.gui.ApiKeyNoticeScreen(open));
     }
 
     public static boolean isActiveOnCurrentServer() {

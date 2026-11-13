@@ -152,6 +152,8 @@ public class SquaremapApiClient {
     private volatile Map<String, Integer> townChunks = Map.of();
     /** townKey -> the rest of what the popup states outright. See {@link MapTownFacts}. */
     private volatile Map<String, MapTownFacts> townFacts = Map.of();
+    /** nation (lower case) -> the totals across its towns. See {@link MapNationFacts}. */
+    private volatile Map<String, MapNationFacts> nationFacts = Map.of();
     /**
      * Lower-cased player name → the town whose roster lists them, built from the same popups.
      *
@@ -393,6 +395,25 @@ public class SquaremapApiClient {
      * whether it is open or for sale, how much it may claim -- exists only in the API.
      */
     public record MapTownFacts(String board, String founded, boolean pvp, boolean isPublic) {}
+
+    /**
+     * What the map alone can say about a nation, added up from the towns that name it.
+     *
+     * <p>Nations are not markers -- only towns are -- so everything here is a total over the towns
+     * whose tooltip says they belong. That covers the capital, the town count, the resident roll and
+     * the claimed area. A nation's king, its founding date, its balance and its chunk bonus appear
+     * nowhere on the map and need the API.
+     *
+     * <p>Built once per markers refresh rather than per frame: the card that reads it is rebuilt
+     * every frame the panel is open, and this walks every town on the server.
+     */
+    public record MapNationFacts(String capital, int townCount, int residentCount, int chunkCount) {}
+
+    /** @return the map's totals for this nation, or null if no town names it. */
+    public MapNationFacts getNationFacts(String nationName) {
+        if (nationName == null || nationName.isBlank()) return null;
+        return nationFacts.get(nationName.toLowerCase(Locale.ROOT));
+    }
 
     /** @return the popup's own facts for this town, or null if the map has none. */
     public MapTownFacts getTownFacts(String townKey) {
@@ -693,6 +714,7 @@ public class SquaremapApiClient {
         townChunks = Map.copyOf(chunks);
         townFacts = Map.copyOf(factsAll);
         capitalDisplayNames = Map.copyOf(capitalNamesAll);
+        nationFacts = Map.copyOf(buildNationFacts(nations, residents, chunks, capitalNamesAll));
         residentTowns = Map.copyOf(residentTown);
         // Resident -> nation, resolved once here rather than per player per frame. The town value is a
         // display name and townNations is keyed lower-case, so this is where the one lower-casing goes.
@@ -1178,6 +1200,34 @@ public class SquaremapApiClient {
     }
 
     /** Whether the tooltip's nation clause said "Capital of" -- see POPUP_NATION for why it is separate. */
+    /**
+     * Rolls the per-town lookups up into per-nation totals.
+     *
+     * <p>Takes the maps being built rather than the volatile fields, so it sees this refresh's data
+     * and not whatever the last one happened to leave behind.
+     */
+    private static Map<String, MapNationFacts> buildNationFacts(Map<String, String> nations,
+                                                                Map<String, Integer> residents,
+                                                                Map<String, Integer> chunks,
+                                                                Map<String, String> capitalNames) {
+        record Acc(int towns, int residents, int chunks, String capital) {}
+        Map<String, Acc> acc = new HashMap<>();
+        for (Map.Entry<String, String> e : nations.entrySet()) {
+            String townKey = e.getKey();
+            String nationKey = e.getValue().toLowerCase(Locale.ROOT);
+            Acc a = acc.getOrDefault(nationKey, new Acc(0, 0, 0, ""));
+            String capital = capitalNames.containsKey(townKey) ? capitalNames.get(townKey) : a.capital();
+            acc.put(nationKey, new Acc(
+                    a.towns() + 1,
+                    a.residents() + Math.max(0, residents.getOrDefault(townKey, 0)),
+                    a.chunks() + Math.max(0, chunks.getOrDefault(townKey, 0)),
+                    capital));
+        }
+        Map<String, MapNationFacts> out = new HashMap<>(acc.size());
+        acc.forEach((k, a) -> out.put(k, new MapNationFacts(a.capital(), a.towns(), a.residents(), a.chunks())));
+        return out;
+    }
+
     /** Founded / PVP / Public, straight out of the popup. Null when the popup has none of them. */
     private static MapTownFacts extractPopupFacts(String popupHtml) {
         if (popupHtml == null || popupHtml.isEmpty()) return null;

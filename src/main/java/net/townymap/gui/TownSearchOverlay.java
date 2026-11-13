@@ -1302,7 +1302,34 @@ public final class TownSearchOverlay {
             ArrayList<InfoRow> lines = new ArrayList<>();
             lines.add(InfoRow.text("§f§lNation: " + selectedName));
             if (details == null) {
-                lines.add(InfoRow.text("§7Details: §fChecking..."));
+                // Nations are not markers, but their towns are, and every town's tooltip names its
+                // nation -- so the capital, the town count and the totals across them are all on the
+                // map already. Show those rather than sitting on "Checking...", which is what this
+                // card did for ever whenever the API could not answer: no key, or a nation it has no
+                // record of. Anything the API lands later simply replaces this.
+                net.townymap.api.SquaremapApiClient api = TownyMapMod.getApiClient();
+                net.townymap.api.SquaremapApiClient.MapNationFacts f =
+                        api == null ? null : api.getNationFacts(selectedName);
+                if (f == null || f.townCount() == 0) {
+                    lines.add(InfoRow.text("§7Details: §fChecking..."));
+                    return List.copyOf(lines);
+                }
+                if (!f.capital().isBlank()) lines.add(InfoRow.link("§7Capital: §f", f.capital(), "town"));
+                if (!TownyMapMod.isArchiveMode()) {
+                    for (String mega : TownyMapMod.meganationsForNation(selectedName)) {
+                        lines.add(InfoRow.link("§7Meganation: §f", mega, "alliance"));
+                    }
+                    for (String alli : TownyMapMod.alliancesForNation(selectedName)) {
+                        lines.add(InfoRow.link("§7Alliance: §f", alli, "alliance"));
+                    }
+                }
+                lines.add(InfoRow.text("§7Towns: §f" + f.townCount()));
+                lines.add(InfoRow.text("§7Residents: §f" + f.residentCount()));
+                lines.add(InfoRow.text("§7Chunks: §f" + f.chunkCount()));
+                // Say which of the two it is: still waiting, or never going to arrive.
+                lines.add(InfoRow.text(TownyMapMod.apiKeyState().usable()
+                        ? "§8From map data - checking EarthMC for the rest..."
+                        : "§8From map data - set an API key for king, founded and bonus"));
                 return List.copyOf(lines);
             }
             boolean archive = TownyMapMod.isArchiveMode();

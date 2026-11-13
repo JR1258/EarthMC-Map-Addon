@@ -1493,10 +1493,15 @@ public final class TownSearchOverlay {
             lines.add(InfoRow.text("§7Chunks: " + sizeColor + details.numChunks() + maxStr));
         }
         if (!details.founded().isBlank()) lines.add(InfoRow.text("§7Founded: §f" + details.founded()));
-        String townInactive = details.activeResidentCount() >= 0
-                && details.activeResidentCount() < details.residentCount()
-                ? " §8(" + (details.residentCount() - details.activeResidentCount()) + " Inactive)" : "";
-        lines.add(InfoRow.text("§7Residents: §f" + details.residentCount() + townInactive));
+        // Active count first, inactive remainder in the bracket -- the same shape as the town card in
+        // TownInfoOverlay, and the same way EarthMC's own map states it.
+        if (details.activeResidentCount() >= 0 && details.activeResidentCount() <= details.residentCount()) {
+            int townInactive = details.residentCount() - details.activeResidentCount();
+            lines.add(InfoRow.text("§7Residents: §f" + details.activeResidentCount()
+                    + (townInactive > 0 ? " §8(Inactive: " + townInactive + ")" : "")));
+        } else {
+            lines.add(InfoRow.text("§7Residents: §f" + details.residentCount() + " §8(total)"));
+        }
         lines.add(InfoRow.text("§7Gold: §f" + formatGold(details.balance())));
         lines.add(InfoRow.text("§7Open: §f" + yesNo(details.isOpen())));
         lines.add(InfoRow.text("§7Public: §f" + yesNo(details.isPublic())));

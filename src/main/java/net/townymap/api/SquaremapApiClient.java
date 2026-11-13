@@ -95,6 +95,12 @@ public class SquaremapApiClient {
     // grouping or counting it -- and a capital whose nation read "Capital of X" matched nothing, split its
     // nation's row in the Stats tables in two and left its residents colourless on the map. Group 1 goes
     // into capitalTowns, and getTownNationLabel puts the two back together for the titles that want it.
+    /** The town board, the one italic line in the popup: "<i>De Nile is a river in Egypt.</i>".
+     *  Exactly one {@code <i>} appears per popup across all 5,801 of them, and its text matches the
+     *  API's own {@code board} verbatim. No unescaping: squaremap emits no HTML entities at all in
+     *  this file, and the mayor, nation and founded parsers beside this one make the same assumption. */
+    private static final Pattern POPUP_BOARD =
+            Pattern.compile("(?is)<i>(.*?)</i>");
     /** "Founded: <b>May 8 2026</b>" -- the same date string the API's timestamps format to. */
     private static final Pattern POPUP_FOUNDED =
             Pattern.compile("(?is)Founded:\\s*<b[^>]*>(.*?)</b>");
@@ -386,7 +392,7 @@ public class SquaremapApiClient {
      * <p>These are the fields squaremap prints in full; everything else on a town card -- its balance,
      * whether it is open or for sale, how much it may claim -- exists only in the API.
      */
-    public record MapTownFacts(String founded, boolean pvp, boolean isPublic) {}
+    public record MapTownFacts(String board, String founded, boolean pvp, boolean isPublic) {}
 
     /** @return the popup's own facts for this town, or null if the map has none. */
     public MapTownFacts getTownFacts(String townKey) {
@@ -1175,14 +1181,16 @@ public class SquaremapApiClient {
     /** Founded / PVP / Public, straight out of the popup. Null when the popup has none of them. */
     private static MapTownFacts extractPopupFacts(String popupHtml) {
         if (popupHtml == null || popupHtml.isEmpty()) return null;
+        Matcher bd = POPUP_BOARD.matcher(popupHtml);
+        String board = bd.find() ? HTML_TAG.matcher(bd.group(1)).replaceAll("").trim() : "";
         Matcher f = POPUP_FOUNDED.matcher(popupHtml);
         String founded = f.find() ? HTML_TAG.matcher(f.group(1)).replaceAll("").trim() : "";
         Matcher pv = POPUP_PVP.matcher(popupHtml);
         boolean pvp = pv.find() && "true".equalsIgnoreCase(pv.group(1));
         Matcher pb = POPUP_PUBLIC.matcher(popupHtml);
         boolean isPublic = pb.find() && "true".equalsIgnoreCase(pb.group(1));
-        if (founded.isEmpty() && !pvp && !isPublic) return null;   // nothing worth storing
-        return new MapTownFacts(founded, pvp, isPublic);
+        if (board.isEmpty() && founded.isEmpty() && !pvp && !isPublic) return null;   // nothing to store
+        return new MapTownFacts(board, founded, pvp, isPublic);
     }
 
     private static boolean isCapitalTooltip(String tooltipHtml) {

@@ -2030,12 +2030,21 @@ public class WorldMapRenderer {
             nationStarHits = List.of();
             return;
         }
-        if (!config.townsEnabled || !config.nationStarsEnabled || nationDetails.isEmpty()) {
+        if (!config.townsEnabled || !config.nationStarsEnabled) {
             nationStarHits = List.of();
             return;
         }
         Minecraft client = Minecraft.getInstance();
         if (client == null) return;
+
+        // With no API nation data -- no key, or it has not loaded yet -- the map still names every
+        // capital: its tooltip reads "(Capital of X)". That is the whole of what a capital star needs,
+        // so the stars no longer wait on a request that may never be allowed to go out.
+        if (nationDetails.isEmpty()) {
+            renderMapCapitalStars(ctx, client, cameraX, cameraZ, blockScale, sw, sh,
+                    worldLeft, worldRight, worldTop, worldBottom);
+            return;
+        }
 
         ArrayList<StarHit> hits = new ArrayList<>();
         for (EarthMcNationData nation : nationDetails.values()) {
@@ -2068,6 +2077,40 @@ public class WorldMapRenderer {
 
             ctx.text(client.font, "★", x - 3, y - 5, 0xFFFFD84D, true);
             hits.add(new StarHit(x, y, nation.name()));   // record where it landed for click hit-testing
+        }
+        nationStarHits = hits.isEmpty() ? List.of() : List.copyOf(hits);
+    }
+
+    /**
+     * Capital stars drawn from the map alone.
+     *
+     * <p>Positioned on the capital's own claim rather than the nation spawn the API would give, which
+     * is the more honest spot for a star that means "this town is the capital" -- and the only one
+     * available off Earth anyway.
+     */
+    private void renderMapCapitalStars(GuiGraphicsExtractor ctx, Minecraft client,
+                                       double cameraX, double cameraZ, double blockScale, int sw, int sh,
+                                       double worldLeft, double worldRight,
+                                       double worldTop, double worldBottom) {
+        Map<String, String> capitals = api.nationCapitals();
+        if (capitals.isEmpty()) {
+            nationStarHits = List.of();
+            return;
+        }
+        ArrayList<StarHit> hits = new ArrayList<>();
+        for (Map.Entry<String, String> e : capitals.entrySet()) {
+            TownData capital = townByName(e.getValue());
+            if (capital == null) continue;   // no claim in the world being shown
+            double markerX = capital.centerX();
+            double markerZ = capital.centerZ();
+            if (markerX < worldLeft || markerX > worldRight
+                    || markerZ < worldTop || markerZ > worldBottom) continue;
+            int x = toScreenX(markerX, cameraX, blockScale, sw);
+            int y = toScreenY(markerZ, cameraZ, blockScale, sh);
+            if (x < -10 || x > sw + 10 || y < -10 || y > sh + 10) continue;
+            ctx.text(client.font, "\u2605", x - 3, y - 5, 0xFFFFD84D, true);
+            // The nation name the hit test wants is the map's own spelling, not the lower-cased key.
+            hits.add(new StarHit(x, y, api.getTownNation(e.getValue().toLowerCase(Locale.ROOT))));
         }
         nationStarHits = hits.isEmpty() ? List.of() : List.copyOf(hits);
     }

@@ -4007,6 +4007,7 @@ public class TownyMapMod implements ClientModInitializer {
             if (c == null) return;
             c.execute(() -> {
                 if (state == net.townymap.api.ApiKeyState.OK) {
+                    clearApiBackoffs();
                     sendFeedback("API key accepted.", ChatFormatting.GREEN);
                 } else if (state == net.townymap.api.ApiKeyState.REJECTED) {
                     // The length, never the key. A paste that arrived cut short refuses exactly like a
@@ -4020,6 +4021,35 @@ public class TownyMapMod implements ClientModInitializer {
                 }
             });
         });
+    }
+
+    /**
+     * Forgets every "we already tried that and it failed" marker.
+     *
+     * <p>While there is no usable key, requests do not merely fail -- they fail INSTANTLY, and each
+     * failure arms a backoff meant for a flaky network: five to thirty minutes for a player, ten for
+     * the alliance data, and a permanent session-long entry for a nation's bonus projection or a
+     * town's overclaim date, neither of which has any expiry at all. Pasting a working key would
+     * otherwise fix nothing visible for half an hour, because every path was still serving a refusal
+     * it had recorded while there was no key to use.
+     *
+     * <p>Clearing the two index timestamps as well makes the first map frame after this re-request
+     * them, which is what puts the nation capital stars back.
+     */
+    private static void clearApiBackoffs() {
+        townDetailsDeferredAt.clear();
+        playerDetailsFailedAt.clear();
+        playerDetailsDeferredAt.clear();
+        nationDetailsDeferredAt.clear();
+        // These two cache the FAILURE as a result and never expire on their own.
+        nationBonusProjCache.clear();
+        townOverclaimCache.clear();
+        lastPlayerIndexAttemptMs = 0L;
+        lastNationIndexAttemptMs = 0L;
+        lastNationCapitalDetailsRequestMs = 0L;
+        // Let the alliance source be tried again at once rather than at the end of its doubling wait.
+        allianceLoadedMs = 0L;
+        allianceRetryMs = ALLIANCE_RETRY_MIN_MS;
     }
 
     private static void sendFeedback(String message, ChatFormatting color) {
@@ -4877,6 +4907,7 @@ public class TownyMapMod implements ClientModInitializer {
 
     private static void loadTownDetailsCache() {
         Path path = townDetailsCachePath();
+        discardSupersededTownCache();
         if (!Files.isRegularFile(path)) return;
         try {
             String json = Files.readString(path);
@@ -4955,10 +4986,31 @@ public class TownyMapMod implements ClientModInitializer {
         }
     }
 
+    /** Removes the v1 cache once v2 exists beside it. It is a few megabytes of data whose fields no
+     *  longer mean what they say, regenerated from the API as towns are opened, and nothing reads it
+     *  any more -- leaving it on disk would only be litter. Best effort: failing to delete it is not
+     *  worth a word to the user. */
+    private static void discardSupersededTownCache() {
+        Path old = FabricLoader.getInstance().getConfigDir()
+                .resolve("townymapaddon")
+                .resolve("town-details-cache.json");
+        if (!Files.isRegularFile(old)) return;
+        try {
+            Files.delete(old);
+            LOGGER.info("[TownyMap] Removed the superseded town detail cache (v1).");
+        } catch (Exception e) {
+            LOGGER.debug("[TownyMap] Could not remove the v1 town detail cache: {}", e.toString());
+        }
+    }
+
     private static Path townDetailsCachePath() {
         return FabricLoader.getInstance().getConfigDir()
                 .resolve("townymapaddon")
-                .resolve("town-details-cache.json");
+                // v2: residentCount switched from "everyone" to the map's total and activeResidentCount
+                // from "-1 unless looked up" to the API's own active figure. A v1 file parses cleanly
+                // into the new record and is silently wrong -- an old town shows no Inactive line and a
+                // stale claim maximum -- so the name changes rather than the contents being trusted.
+                .resolve("town-details-cache-v2.json");
     }
 
     public static void requestMinimapTownHighlightRefresh() {

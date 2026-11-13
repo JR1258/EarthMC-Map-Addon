@@ -159,6 +159,10 @@ public class TownyMapMod implements ClientModInitializer {
         apiClient  = new SquaremapApiClient(config);
         earthMcApi = new EarthMcApiClient();
         earthMcApi.setApiKey(config.earthMcApiKey);
+        // One /authtest at startup. Nothing else can tell a good key from a bad one before 2026-11-19
+        // -- the data endpoints answer a bogus key with 200 today -- so without this a typo would sit
+        // there looking healthy until the morning everything stopped.
+        if (earthMcApi.hasApiKey()) earthMcApi.verifyKey();
         renderer   = new WorldMapRenderer(config, apiClient);
         ChunkCounterOverlay.loadSelection(config.chunkCounterSelection,
                 config.chunkCounterGroups, config.activeChunkCounterGroup);

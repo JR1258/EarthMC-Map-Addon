@@ -3694,13 +3694,17 @@ public class TownyMapMod implements ClientModInitializer {
         armedMapDismiss = false;
         TownSearchOverlay.reset();   // right-clicking a new town clears any active search bar/result
         String fallbackKey = clickedTown == null ? "" : townKey(clickedTown.name());
-        TownPopupData fallback = clickedTown == null ? null : townDetailsCache.get(fallbackKey);
-        // With no usable key the API will not be asked at all, so without this the panel simply never
-        // opens. The map already knows most of what the card shows; open it with that and let the
-        // fetch, if one happens, replace it.
-        if (fallback == null && clickedTown != null && !isArchiveMode()) {
-            fallback = mapOnlyTownData(clickedTown);
-        }
+        TownPopupData cached = clickedTown == null ? null : townDetailsCache.get(fallbackKey);
+        // The map can always build a card for a claimed town. Whether to SHOW it before the API has
+        // answered is the question. With no usable key the API will not be asked at all, so without
+        // it the panel would never open; with one, the real record is a few hundred milliseconds
+        // away, and flashing a shorter card first makes the panel visibly change shape under the
+        // reader -- rows filling in, PVP turning into Open, the resident count jumping from the roll
+        // to the active figure. So it is held back as the fallback for a request that FAILS, and the
+        // ordinary loading state covers the wait.
+        TownPopupData mapCard = (clickedTown != null && !isArchiveMode()) ? mapOnlyTownData(clickedTown) : null;
+        TownPopupData fallback = cached != null ? cached
+                : (apiKeyState().usable() ? null : mapCard);
         MapJumpTarget fallbackTarget = clickedTown == null ? null
                 : new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
         long lookupId = townLookupId.incrementAndGet();
@@ -3714,7 +3718,9 @@ public class TownyMapMod implements ClientModInitializer {
         } else {
             TownInfoOverlay.showLoading(screenX, screenY);
         }
-        TownPopupData cachedFallback = fallback;
+        // A failed request still ends with something on screen rather than nothing: the cached record
+        // if there is one, otherwise the card the map can build.
+        TownPopupData cachedFallback = cached != null ? cached : mapCard;
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
         // By name when the claim is ours to name, by position otherwise -- the second only happens with
         // wildernessTownInfo on, and is what answers "is this really unclaimed?" rather than assuming it.
@@ -4678,6 +4684,22 @@ public class TownyMapMod implements ClientModInitializer {
             playerDetailsCache.remove(e.getKey());
             return true;
         });
+    }
+
+    /** Whether this nation's lookup has been tried and come back empty. The deferred stamp is set
+     *  when the API does not return a nation it was asked for, and cleared when one arrives, so its
+     *  presence means "asked, and got nothing". */
+    public static boolean nationLookupFailed(String name) {
+        if (name == null || name.isBlank()) return false;
+        return nationDetailsDeferredAt.containsKey(townKey(name));
+    }
+
+    /** Whether this player's lookup has been tried and come back empty -- an opt-out, usually, which
+     *  never resolves. Lets a card say "not on the API" only once that is actually true, rather than
+     *  while the first request is still in flight. */
+    public static boolean playerLookupFailed(String name) {
+        if (name == null || name.isBlank()) return false;
+        return playerDetailsFailedAt.containsKey(townKey(name));
     }
 
     private static boolean playerDetailNeeded(String key, long now) {

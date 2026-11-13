@@ -299,9 +299,17 @@ public final class TownInfoOverlay {
             lines.add(InfoRow.text("§7Open: §f§l"  + (d.isOpen() ? "Yes" : "No")));
         }
         lines.add(InfoRow.text("§7Public: §f§l"    + (d.isPublic() ? "Yes" : "No")));
-        String residentsLine = "§7Residents: §f§l" + d.residentCount();
-        if (d.activeResidentCount() >= 0 && d.activeResidentCount() < d.residentCount()) {
-            residentsLine += " §8(" + (d.residentCount() - d.activeResidentCount()) + " Inactive)";
+        // EarthMC's own map leads with the active count, and so does the game: that is the number
+        // that earns chunks and the one people mean by a town's size. The inactive tail goes in the
+        // bracket. Mirrored in TownSearchOverlay#townInfo -- keep the two reading the same.
+        String residentsLine;
+        if (d.activeResidentCount() >= 0 && d.activeResidentCount() <= d.residentCount()) {
+            int inactive = d.residentCount() - d.activeResidentCount();
+            residentsLine = "§7Residents: §f§l" + d.activeResidentCount()
+                    + (inactive > 0 ? " §8(Inactive: " + inactive + ")" : "");
+        } else {
+            // Map data only: the roster names everyone, and nothing here can say who still counts.
+            residentsLine = "§7Residents: §f§l" + d.residentCount() + " §8(total)";
         }
         lines.add(InfoRow.text(residentsLine));
         if (!archive && !d.mapOnly()) {
@@ -309,7 +317,8 @@ public final class TownInfoOverlay {
         }
         if (d.mapOnly()) {
             // Say why the card is short, rather than leaving someone to wonder what happened to it.
-            lines.add(InfoRow.text("§8Map data only - set an API key for gold, open and claim limit"));
+            lines.add(InfoRow.text("§8Map data only - set an API key for gold, open, claim limit"));
+            lines.add(InfoRow.text("§8and the active resident count"));
         }
 
         return lines;

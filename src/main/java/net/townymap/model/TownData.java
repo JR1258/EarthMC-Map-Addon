@@ -83,12 +83,66 @@ public record TownData(String name, int rgbColor, int fillRgbColor, List<int[][]
         return minZ + (maxZ - minZ) / 2;
     }
 
+    /**
+     * Chunks enclosed by this claim's borders: the area they bound, divided by 256 (16x16 blocks to a
+     * chunk). This is ONE world's claim -- a town with Moon outposts has a marker in each world, and
+     * only their sum matches the API's town-wide total.
+     *
+     * <p>Rings arrive flattened with no outer/hole distinction, and squaremap winds them all the same
+     * way, so winding cannot say which is which. Nesting can: a ring inside an odd number of the
+     * others is a hole, and subtracts. Measured against the API across 267 towns -- including all 54
+     * whose rings nest -- 266 came out exact. The one miss is a border that pinches shut around an
+     * unclaimed pocket, which no ring-level rule can see, so this stays "approximate": prefer a figure
+     * the API has already given when one is in hand.
+     */
     public int approximateChunks() {
-        long blocks = 0;
-        for (int[][] ring : polygonRings) {
-            blocks += Math.abs(area2(ring)) / 2;
+        int n = polygonRings.size();
+        if (n == 0) return 1;
+        // Nothing can nest inside a single ring, which is the overwhelming majority of towns.
+        if (n == 1) return (int) Math.max(1, Math.round(Math.abs(area2(polygonRings.get(0))) / 2.0 / 256.0));
+        double[][] inside = new double[n][];
+        for (int i = 0; i < n; i++) inside[i] = interiorPoint(polygonRings.get(i));
+        double blocks = 0;
+        for (int i = 0; i < n; i++) {
+            double area = Math.abs(area2(polygonRings.get(i))) / 2.0;
+            if (inside[i] == null) { blocks += area; continue; }   // degenerate: count it solid
+            int depth = 0;
+            for (int j = 0; j < n; j++) {
+                if (j != i && ringContains(polygonRings.get(j), inside[i][0], inside[i][1])) depth++;
+            }
+            blocks += (depth % 2 == 0) ? area : -area;
         }
         return (int) Math.max(1, Math.round(blocks / 256.0));
+    }
+
+    /** Ray cast, counting the crossings left of the point. */
+    private static boolean ringContains(int[][] ring, double x, double z) {
+        boolean in = false;
+        for (int i = 0, n = ring.length; i < n; i++) {
+            int[] p = ring[i], q = ring[(i + 1) % n];
+            if ((p[1] > z) != (q[1] > z)) {
+                double cross = p[0] + (z - p[1]) * (double) (q[0] - p[0]) / (q[1] - p[1]);
+                if (x < cross) in = !in;
+            }
+        }
+        return in;
+    }
+
+    /** A point strictly inside the ring, to test that ring against the others. Claim corners sit on
+     *  16-block chunk lines, so stepping 8 blocks off an edge midpoint lands mid-chunk on one side or
+     *  the other; whichever of the two this ring contains is interior to it. */
+    private static double[] interiorPoint(int[][] ring) {
+        for (int i = 0, n = ring.length; i < n; i++) {
+            int[] p = ring[i], q = ring[(i + 1) % n];
+            double dx = q[0] - p[0], dz = q[1] - p[1];
+            double len = Math.sqrt(dx * dx + dz * dz);
+            if (len == 0) continue;
+            double mx = (p[0] + q[0]) / 2.0, mz = (p[1] + q[1]) / 2.0;
+            double ox = -dz / len * 8.0, oz = dx / len * 8.0;
+            if (ringContains(ring, mx + ox, mz + oz)) return new double[]{mx + ox, mz + oz};
+            if (ringContains(ring, mx - ox, mz - oz)) return new double[]{mx - ox, mz - oz};
+        }
+        return null;
     }
 
     /** Parse "#rrggbb" or "#rrggbbaa" into packed 0x00RRGGBB. Returns fallback on error. */

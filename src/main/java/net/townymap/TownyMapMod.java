@@ -93,11 +93,10 @@ public class TownyMapMod implements ClientModInitializer {
     private static final Map<String, Long> townDetailsFetchedAt = new ConcurrentHashMap<>();
     private static final Set<String> townDetailsLoading = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> townDetailsDeferredAt = new ConcurrentHashMap<>();
-    // On-demand active-resident counts (the bulk last-login lookup), kept OFF the mass town/nation
-    // fetch so the map's bulk fetches stay cheap. Only the focused/searched town & nation are looked
-    // up here. Value -1 = looked up but unavailable (e.g. over the resident cap) — cached to avoid re-firing.
-    private static final Map<String, Integer> townActiveCache = new ConcurrentHashMap<>();
-    private static final Set<String> townActiveLoading = ConcurrentHashMap.newKeySet();
+    // On-demand per-resident last-login lookups, kept OFF the mass fetches. Nations only now: the
+    // bonus-drop projection needs each resident's own purge date and nothing else carries it. Towns
+    // no longer appear here -- their active count arrives with the base town fetch, for nothing.
+    // Value -1 = looked up but unavailable (e.g. over the resident cap) — cached to avoid re-firing.
     private static final Map<String, Integer> nationActiveCache = new ConcurrentHashMap<>();
     private static final Map<String, NationBonusProjection> nationBonusProjCache = new ConcurrentHashMap<>();
     private static final Map<String, net.townymap.model.TownOverclaimProjection> townOverclaimCache = new ConcurrentHashMap<>();
@@ -1738,9 +1737,14 @@ public class TownyMapMod implements ClientModInitializer {
         if (config.infoDisplayTownEnabled) {
             if (here != null) {
                 String key = townKey(here.name());
-                requestTownDetails(here.name(), key);
-                TownPopupData details = townDetailsCache.get(key);
-                String nation = details != null ? details.nationName() : null;
+                // The nation is all this line wants, and the marker tooltip carries it -- so walking
+                // into a town no longer costs a request. Archive mode reads the snapshot instead: the
+                // live markers' nation is today's, not that date's.
+                String nation = isArchiveMode() ? null : apiClient.getTownNation(key);
+                if (nation == null || nation.isBlank()) {
+                    TownPopupData details = townDetailsCache.get(key);
+                    nation = details != null ? details.nationName() : null;
+                }
                 lines.add(nation != null && !nation.isBlank()
                         ? "§fTown: " + here.name() + " §7(" + nation + ")"
                         : "§fTown: " + here.name());
@@ -3133,7 +3137,6 @@ public class TownyMapMod implements ClientModInitializer {
         if (!isActiveOnCurrentServer()) return;
         TownPopupData data = TownInfoOverlay.currentData();
         if (data != null && data != TownPopupData.WILDERNESS) {
-            requestTownActiveResidents(data.townName(), townKey(data.townName()));
             if (data.nationName() != null && !data.nationName().isBlank()) {
                 requestNationDetails(data.nationName());
             }
@@ -3151,14 +3154,19 @@ public class TownyMapMod implements ClientModInitializer {
             if (town == null) return;
 
             String key = townKey(town.name());
+            // No fetch from here. This card shows a town's mayor, nation and claim size, and the map
+            // carries all three already -- the first two off the marker's popup and tooltip, the third
+            // off the borders being drawn. A cached detail is still preferred when one exists, since
+            // the API's own chunk count is authoritative, but hovering a town is no longer a reason to
+            // spend a request on it.
             TownPopupData details = townDetailsCache.get(key);
-            requestTownDetails(town.name(), key);
             // In archive mode the live markers' mayor/nation are today's, not that date's — pass null so the
             // hover uses only the archived popup detail (which carries the historical mayor/nation).
             boolean arch = isArchiveMode();
             TownHoverOverlay.render(ctx, mouseX, mouseY, screenW, screenH, town, details,
                     arch ? null : apiClient.getTownMayor(key),
-                    arch ? archiveNationLabel(town, details) : apiClient.getTownNationLabel(key));
+                    arch ? archiveNationLabel(town, details) : apiClient.getTownNationLabel(key),
+                    arch ? -1 : apiClient.getTownChunks(key));
         }
     }
 
@@ -3905,6 +3913,10 @@ public class TownyMapMod implements ClientModInitializer {
                                          double clickedWorldX, double clickedWorldZ,
                                          MapJumpTarget fallbackTarget) {
         if (data != null) {
+            // Fold in the map's resident total before anything reads this. cacheTownDetails does the
+            // same to the cached copy, and the panel must not end up showing a different number from
+            // the one the search rows show for the same town.
+            if (data != TownPopupData.WILDERNESS) data = withMapTotals(townKey(data.townName()), data);
             // Don't persist archived popups into the live (disk-backed) details cache — that would leak
             // historical data into the live map on the next session.
             if (data != TownPopupData.WILDERNESS && !isArchiveMode()) {
@@ -3973,26 +3985,6 @@ public class TownyMapMod implements ClientModInitializer {
                 .append(Component.literal(message).withStyle(color)));
     }
 
-    // Single-town fetch for the hovered/clicked town. Visible-map and search details go through the bulk
-    // path (requestTownDetailsBulk); this is only ever called for one town at a time, so it needs no
-    // concurrency cap of its own — the loading set just dedupes an in-flight request.
-    private static void requestTownDetails(String townName, String key) {
-        if (isArchiveMode()) return;   // archive uses the snapshot's own popup data, never live
-        long now = System.currentTimeMillis();
-        if (earthMcApi == null || isTownDetailsFresh(key) || requestDeferred(townDetailsDeferredAt, key, now)) return;
-        if (!townDetailsLoading.add(key)) return;
-        earthMcApi.fetchTown(townName).whenComplete((data, error) -> {
-            if (data != null && data != TownPopupData.WILDERNESS) {
-                cacheTownDetails(key, data);
-                scheduleTownDetailsCacheSave();
-                townDetailsDeferredAt.remove(key);
-            } else if (error != null) {
-                deferRequest(townDetailsDeferredAt, key, System.currentTimeMillis());
-            }
-            townDetailsLoading.remove(key);
-        });
-    }
-
     private static boolean requestDeferred(Map<String, Long> deferredAt, String key, long now) {
         Long deferred = deferredAt.get(key);
         if (deferred == null) return false;
@@ -4019,43 +4011,30 @@ public class TownyMapMod implements ClientModInitializer {
         long now = System.currentTimeMillis();
         String canonicalKey = townKey(data.townName());
         if (requestedKey != null && !requestedKey.isBlank()) {
-            townDetailsCache.put(requestedKey, withCachedActive(requestedKey, data));
+            townDetailsCache.put(requestedKey, withMapTotals(requestedKey, data));
             townDetailsFetchedAt.put(requestedKey, now);
             townDetailsDeferredAt.remove(requestedKey);
         }
-        townDetailsCache.put(canonicalKey, withCachedActive(canonicalKey, data));
+        townDetailsCache.put(canonicalKey, withMapTotals(canonicalKey, data));
         townDetailsFetchedAt.put(canonicalKey, now);
         townDetailsDeferredAt.remove(canonicalKey);
     }
 
-    /** Re-applies a previously looked-up active count when base town data is (re)cached, so the
-     *  inactive suffix survives a base refresh and the active-before-base ordering both work. */
-    private static TownPopupData withCachedActive(String key, TownPopupData data) {
-        Integer a = townActiveCache.get(key);
-        return (a != null && a >= 0) ? data.withActiveResidentCount(a) : data;
-    }
-
-    /** Looks up the active-resident count for ONE focused town (off the mass-fetch path) and folds
-     *  it into the cached detail + the open info panel. Cheap: at most one town's residents. */
-    /** Triggers the on-demand active-resident lookup for a focused town (search panel), so it's fetched
-     *  only for the town actually opened rather than every visible search row. */
-    public static void requestTownActive(String townName) {
-        requestTownActiveResidents(townName, townKey(townName));
-    }
-
-    private static void requestTownActiveResidents(String townName, String key) {
-        if (isArchiveMode()) return;
-        if (earthMcApi == null || townName == null || townName.isBlank() || key == null || key.isBlank()) return;
-        if (townActiveCache.containsKey(key) || !townActiveLoading.add(key)) return;
-        earthMcApi.fetchTownActiveResidents(townName).whenComplete((count, error) -> {
-            int c = count != null ? count : -1;
-            townActiveCache.put(key, c);   // cache even -1 so this doesn't re-fire every frame
-            if (c >= 0) {
-                townDetailsCache.computeIfPresent(key, (k, old) -> old.withActiveResidentCount(c));
-                TownInfoOverlay.setActiveResidentCount(townName, c);
-            }
-            townActiveLoading.remove(key);
-        });
+    /**
+     * Folds the figures the map carries for free into town data the API returned.
+     *
+     * <p>The API's resident count is the ACTIVE one: EarthMC filters both {@code stats.numResidents}
+     * and the roster to the last 42 days. The town's TOTAL is only on the squaremap popup, which still
+     * lists every member -- so without this the two numbers are identical and the "(N Inactive)"
+     * suffix can never appear. Never lowers the count: if the markers are stale or the town is missing
+     * from them, the API's figure stands.
+     */
+    private static TownPopupData withMapTotals(String key, TownPopupData data) {
+        if (apiClient == null || data == null) return data;
+        // An archived popup is that date's; the live markers are today's, so leave it alone.
+        if (isArchiveMode()) return data;
+        int total = apiClient.getTownResidents(key);
+        return total > data.residentCount() ? data.withTotalResidentCount(total) : data;
     }
 
     /** Looks up the active-resident count for ONE focused nation (off the mass-fetch path). */

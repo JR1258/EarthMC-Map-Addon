@@ -10,6 +10,7 @@
 
 **Without an API key**
 - Right-clicking a town opens its card again. The card was built only from EarthMC's answer, and with no key there is no answer, so nothing opened at all. It is now built from the map, which already names the town, its nation, its board, its mayor, when it was founded, whether PVP and Public are on, its whole resident roll and -- from the borders being drawn -- its claim size. The three things only EarthMC holds, the balance, whether the town is open, and the claim limit, are left out rather than shown as a guess, and a line at the foot of the card says why it is short.
+- A nation's panel is no longer stuck on "Checking..." when EarthMC cannot be asked. Nations are not drawn on the map, but their towns are, and every town's tooltip names the nation it belongs to -- so the capital, the number of towns, the residents and the claimed area are all addable up from what is already downloaded. The king, the founding date and the chunk bonus exist only in the API and are still left out, and the card says which of the two it is waiting on: a key, or just the reply.
 - The nation capital stars come back without a key. Every capital is already named on the map, in the tooltip that reads "(Capital of X)" -- 342 of them -- so the stars are drawn from that instead of waiting on a request that is never going to be sent. They sit on the capital's own claim, which is also the only place they can go off Earth.
 
 **Players**

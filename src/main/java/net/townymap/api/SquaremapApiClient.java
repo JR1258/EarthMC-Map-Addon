@@ -95,6 +95,14 @@ public class SquaremapApiClient {
     // grouping or counting it -- and a capital whose nation read "Capital of X" matched nothing, split its
     // nation's row in the Stats tables in two and left its residents colourless on the map. Group 1 goes
     // into capitalTowns, and getTownNationLabel puts the two back together for the titles that want it.
+    /** "Founded: <b>May 8 2026</b>" -- the same date string the API's timestamps format to. */
+    private static final Pattern POPUP_FOUNDED =
+            Pattern.compile("(?is)Founded:\\s*<b[^>]*>(.*?)</b>");
+    private static final Pattern POPUP_PVP =
+            Pattern.compile("(?is)PVP:\\s*<b[^>]*>\\s*(true|false)\\s*</b>");
+    private static final Pattern POPUP_PUBLIC =
+            Pattern.compile("(?is)Public:\\s*<b[^>]*>\\s*(true|false)\\s*</b>");
+
     private static final Pattern POPUP_NATION =
             Pattern.compile("(?is)\\(\\s*(Member|Capital) of\\s+(.*?)\\)");
 
@@ -136,6 +144,8 @@ public class SquaremapApiClient {
     private volatile Map<String, Integer> townResidents = Map.of(); // townKey → resident count, from popups
     /** townKey -> chunks claimed, counted from the map's own borders. See {@link #getTownChunks}. */
     private volatile Map<String, Integer> townChunks = Map.of();
+    /** townKey -> the rest of what the popup states outright. See {@link MapTownFacts}. */
+    private volatile Map<String, MapTownFacts> townFacts = Map.of();
     /**
      * Lower-cased player name → the town whose roster lists them, built from the same popups.
      *
@@ -149,6 +159,8 @@ public class SquaremapApiClient {
     /** Town keys whose tooltip read "Capital of" rather than "Member of". The nation's name is in
      *  townNations either way; only a title and the capital test itself need to know which it was. */
     private volatile Set<String> capitalTowns = Set.of();
+    /** townKey -> the capital's name as the map spells it, for display beside its star. */
+    private volatile Map<String, String> capitalDisplayNames = Map.of();
 
     private final AtomicBoolean markerFetchRunning = new AtomicBoolean(false);
     private final AtomicBoolean playerFetchRunning = new AtomicBoolean(false);
@@ -366,6 +378,35 @@ public class SquaremapApiClient {
         if (townKey == null) return -1;
         Integer n = townChunks.get(townKey);
         return n == null ? -1 : n;
+    }
+
+    /**
+     * What a town's own popup states outright, with no API call behind any of it.
+     *
+     * <p>These are the fields squaremap prints in full; everything else on a town card -- its balance,
+     * whether it is open or for sale, how much it may claim -- exists only in the API.
+     */
+    public record MapTownFacts(String founded, boolean pvp, boolean isPublic) {}
+
+    /** @return the popup's own facts for this town, or null if the map has none. */
+    public MapTownFacts getTownFacts(String townKey) {
+        return townKey == null ? null : townFacts.get(townKey);
+    }
+
+    /**
+     * Each nation's capital, as the map itself names it: nation (lower case) -> capital town name.
+     * Built from the "(Capital of X)" tooltips, so the capital stars can be drawn with no API key.
+     */
+    public Map<String, String> nationCapitals() {
+        Map<String, String> out = new HashMap<>();
+        for (String townKey : capitalTowns) {
+            String nation = townNations.get(townKey);
+            String display = capitalDisplayNames.get(townKey);
+            if (nation != null && !nation.isBlank() && display != null) {
+                out.put(nation.toLowerCase(Locale.ROOT), display);
+            }
+        }
+        return out;
     }
 
     public String getTownMayor(String townKey) { return townKey == null ? null : townMayors.get(townKey); }
@@ -623,12 +664,16 @@ public class SquaremapApiClient {
         Map<String, String> residentTown = new HashMap<>();
         Map<String, Integer> chunks = new HashMap<>();
         Set<String> capitals = new HashSet<>();
+        Map<String, MapTownFacts> factsAll = new HashMap<>();
+        Map<String, String> capitalNamesAll = new HashMap<>();
         for (ParsedMarkers m : markersByWorld.values()) {
             mayors.putAll(m.mayors());
             nations.putAll(m.nations());
             residents.putAll(m.residents());
             residentTown.putAll(m.residentTowns());
             capitals.addAll(m.capitals());
+            factsAll.putAll(m.facts());
+            capitalNamesAll.putAll(m.capitalNames());
             // Chunks are the one value that SUMS rather than replaces: the roster in a Moon popup is
             // the whole town's, but the claim drawn there is only the part of it on the Moon.
             for (TownData t : m.towns()) {
@@ -640,6 +685,8 @@ public class SquaremapApiClient {
         capitalTowns = Set.copyOf(capitals);
         townResidents = Map.copyOf(residents);
         townChunks = Map.copyOf(chunks);
+        townFacts = Map.copyOf(factsAll);
+        capitalDisplayNames = Map.copyOf(capitalNamesAll);
         residentTowns = Map.copyOf(residentTown);
         // Resident -> nation, resolved once here rather than per player per frame. The town value is a
         // display name and townNations is keyed lower-case, so this is where the one lower-casing goes.
@@ -839,12 +886,16 @@ public class SquaremapApiClient {
     private record ParsedMarkers(List<TownData> towns, Map<String, String> mayors,
                                  Map<String, String> nations, Set<String> capitals,
                                  Map<String, Integer> residents,
-                                 Map<String, String> residentTowns) {}
+                                 Map<String, String> residentTowns,
+                                 Map<String, MapTownFacts> facts,
+                                 Map<String, String> capitalNames) {}
 
     private ParsedMarkers parseMarkers(String json) {
         List<TownData> towns = new ArrayList<>();
         Map<String, String> mayors = new HashMap<>();
         Map<String, Integer> residents = new HashMap<>();
+        Map<String, MapTownFacts> facts = new HashMap<>();
+        Map<String, String> capitalNames = new HashMap<>();
         Map<String, String> residentTown = new HashMap<>();
         int markerFailures = 0;
         Map<String, String> nations = new HashMap<>();
@@ -853,7 +904,8 @@ public class SquaremapApiClient {
             JsonElement root = JsonParser.parseString(json);
             if (!root.isJsonArray()) {
                 LOGGER.warn("[TownyMap] markers.json: expected top-level array");
-                return new ParsedMarkers(towns, Map.of(), Map.of(), Set.of(), Map.of(), Map.of());
+                return new ParsedMarkers(towns, Map.of(), Map.of(), Set.of(), Map.of(), Map.of(),
+                        Map.of(), Map.of());
             }
 
             for (JsonElement layerEl : root.getAsJsonArray()) {
@@ -886,6 +938,11 @@ public class SquaremapApiClient {
                     }
 
                     if (!name.equals("?")) {
+                        MapTownFacts f = extractPopupFacts(getString(m, "popup"));
+                        if (f != null) facts.putIfAbsent(name.toLowerCase(Locale.ROOT), f);
+                    }
+
+                    if (!name.equals("?")) {
                         for (String r : extractPopupResidentNames(getString(m, "popup"))) {
                             residentTown.putIfAbsent(r.toLowerCase(Locale.ROOT), name);
                         }
@@ -894,7 +951,10 @@ public class SquaremapApiClient {
                     String nation = extractNation(tooltip);
                     if (nation != null && !name.equals("?")) {
                         nations.put(name.toLowerCase(Locale.ROOT), nation);
-                        if (isCapitalTooltip(tooltip)) capitals.add(name.toLowerCase(Locale.ROOT));
+                        if (isCapitalTooltip(tooltip)) {
+                            capitals.add(name.toLowerCase(Locale.ROOT));
+                            capitalNames.put(name.toLowerCase(Locale.ROOT), name);
+                        }
                     }
 
                     // squaremap ships the stroke colour ("color") and the interior colour ("fillColor")
@@ -935,7 +995,8 @@ public class SquaremapApiClient {
             LOGGER.warn("[TownyMap] Skipped {} unparseable town markers", markerFailures);
         }
         return new ParsedMarkers(towns, Map.copyOf(mayors), Map.copyOf(nations), Set.copyOf(capitals),
-                Map.copyOf(residents), Map.copyOf(residentTown));
+                Map.copyOf(residents), Map.copyOf(residentTown), Map.copyOf(facts),
+                Map.copyOf(capitalNames));
     }
 
     private int[][] parseRing(JsonArray arr) {
@@ -1111,6 +1172,19 @@ public class SquaremapApiClient {
     }
 
     /** Whether the tooltip's nation clause said "Capital of" -- see POPUP_NATION for why it is separate. */
+    /** Founded / PVP / Public, straight out of the popup. Null when the popup has none of them. */
+    private static MapTownFacts extractPopupFacts(String popupHtml) {
+        if (popupHtml == null || popupHtml.isEmpty()) return null;
+        Matcher f = POPUP_FOUNDED.matcher(popupHtml);
+        String founded = f.find() ? HTML_TAG.matcher(f.group(1)).replaceAll("").trim() : "";
+        Matcher pv = POPUP_PVP.matcher(popupHtml);
+        boolean pvp = pv.find() && "true".equalsIgnoreCase(pv.group(1));
+        Matcher pb = POPUP_PUBLIC.matcher(popupHtml);
+        boolean isPublic = pb.find() && "true".equalsIgnoreCase(pb.group(1));
+        if (founded.isEmpty() && !pvp && !isPublic) return null;   // nothing worth storing
+        return new MapTownFacts(founded, pvp, isPublic);
+    }
+
     private static boolean isCapitalTooltip(String tooltipHtml) {
         if (tooltipHtml == null) return false;
         Matcher m = POPUP_NATION.matcher(tooltipHtml);

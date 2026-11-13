@@ -765,7 +765,7 @@ public class EarthMcApiClient {
         // which shows no inactive count rather than a wrong one.
         return new TownPopupData(name, nation, discord, board, mayor, chunks, founded, pvp,
                 isPublic, canOutsidersSpawn, isOverClaimed, isOpen, isForSale, hasNation, residents, balance,
-                residents, maxChunks);
+                residents, maxChunks, false);
     }
 
     /** On-demand for ONE focused nation: BOTH the active-resident count and the bonus-drop projection from

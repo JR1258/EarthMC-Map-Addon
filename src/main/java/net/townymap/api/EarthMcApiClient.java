@@ -129,7 +129,12 @@ public class EarthMcApiClient {
             }
             rejectedCheckedAt = 0L;
             rejectedKeyLogged.set(false);
-            get(BASE + "/authtest");   // the shared paths below set OK or REJECTED from the response
+            // /authtest is the ONLY endpoint that judges the key. Measured 2026-11-13: a bogus key
+            // gets 401 here, and 200 from POST /v4/towns, GET /v4/towns and the rest -- they ignore
+            // the header until 2026-11-19. So a successful data request must never be read as proof
+            // the key is good, or a typo would look fine right up until the morning it stops working.
+            boolean ok = get(BASE + "/authtest") != null;
+            if (ok) keyState = ApiKeyState.OK;   // a 401 has already set REJECTED via noteKeyRefused
             return keyState;
         }, executor);
     }
@@ -1149,10 +1154,7 @@ public class EarthMcApiClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body));
             if (earthMc) builder.header("Authorization", "Bearer " + apiKey);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 200) {
-                if (earthMc) keyState = ApiKeyState.OK;
-                return decodeBody(resp);
-            }
+            if (resp.statusCode() == 200) return decodeBody(resp);
             if (earthMc && (resp.statusCode() == 401 || resp.statusCode() == 403)) {
                 noteKeyRefused(resp.statusCode());
                 return null;
@@ -1188,10 +1190,7 @@ public class EarthMcApiClient {
                     .GET();
             if (earthMc) builder.header("Authorization", "Bearer " + apiKey);
             HttpResponse<byte[]> resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 200) {
-                if (earthMc) keyState = ApiKeyState.OK;
-                return decodeBody(resp);
-            }
+            if (resp.statusCode() == 200) return decodeBody(resp);
             if (earthMc && (resp.statusCode() == 401 || resp.statusCode() == 403)) {
                 noteKeyRefused(resp.statusCode());
                 return null;

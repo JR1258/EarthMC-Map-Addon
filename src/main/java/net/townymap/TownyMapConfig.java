@@ -33,6 +33,14 @@ public class TownyMapConfig {
      */
     public String earthMcApiKey = "";
     /**
+     * Whether the one-time "you can add an API key" notice has been shown.
+     *
+     * <p>Persisted rather than per-launch: it is a nudge, not a reminder, and the status line above
+     * the map already says so for as long as there is no key. Set once the notice has actually been
+     * put on screen, so a crash before that still leaves it to be shown.
+     */
+    public boolean apiKeyNoticeShown = false;
+    /**
      * Kept as a gate throughout the minimap rendering, but no longer user-facing: the settings row was
      * removed, so {@code sanitize()} forces it back on. Without that, anyone whose config had it off
      * would have no way left to turn the minimap overlay back on.
@@ -600,6 +608,8 @@ public class TownyMapConfig {
             "activeChunkCounterGroup", "chunkCounterGroupCount",
             // Not a setting, and re-issuing one is a trip in game: "Reset All" must not throw it away.
             "earthMcApiKey",
+            // Bookkeeping: resetting the options should not make the first-run notice reappear.
+            "apiKeyNoticeShown",
             // What the user has collected, not a setting: resetting the options should not empty it.
             "recentSearches",
             // Bookkeeping. Copying a fresh false over it would re-run the migration and could drag a

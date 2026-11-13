@@ -659,14 +659,18 @@ public class EarthMcApiClient {
             if (status.has("hasNation")) hasNation = status.get("hasNation").getAsBoolean();
         }
 
-        // NOTE: the active-resident lookup is intentionally NOT done here. parseTown runs for every
-        // visible town when a status overlay is active (requestVisibleTownDetails), so a per-resident
-        // bulk POST here would fire hundreds of extra calls, get rate-limited, and corrupt both the
-        // inactive count AND this town's own data. It's looked up on demand for the focused town only
-        // (fetchTownActiveResidents). -1 = "not looked up".
+        // stats.numResidents counts only residents active in the last 42 days, and the residents list
+        // is filtered the same way: EarthMC applied that rule to the API after this mod first shipped,
+        // so the field that used to mean "everyone" now means "active". The active count therefore
+        // arrives free with the base fetch, and the per-resident /players sweep that used to compute
+        // it -- up to twenty extra POSTs for one town -- is gone.
+        //
+        // The TOTAL is what the API no longer gives. It comes off the squaremap popup, which still
+        // lists every member, and cacheTownDetails overlays it. Until it does, both read the same,
+        // which shows no inactive count rather than a wrong one.
         return new TownPopupData(name, nation, discord, board, mayor, chunks, founded, pvp,
                 isPublic, canOutsidersSpawn, isOverClaimed, isOpen, isForSale, hasNation, residents, balance,
-                -1, maxChunks);
+                residents, maxChunks);
     }
 
     /** On-demand for ONE focused nation: BOTH the active-resident count and the bonus-drop projection from
@@ -763,29 +767,6 @@ public class EarthMcApiClient {
         }, executor);
     }
 
-    /** On-demand active-resident count for ONE focused town: one /towns fetch + one resident-timestamp pass
-     *  (shared/cached with the nation lookups). Gated to avoid the 429 storms that would hide the Inactive row.
-     *  Returns -1 if it can't be determined (caller falls back to the raw resident count). */
-    public CompletableFuture<Integer> fetchTownActiveResidents(String townName) {
-        return CompletableFuture.supplyAsync(() -> {
-            if (townName == null || townName.isBlank()) return -1;
-            try {
-                JsonObject body = new JsonObject();
-                JsonArray q = new JsonArray();
-                q.add(townName);
-                body.add("query", q);
-                template(body, "name", "residents");
-                String json = postGated(BASE + "/towns", body.toString());
-                if (json == null) return -1;
-                JsonArray arr = JsonParser.parseString(json).getAsJsonArray();
-                if (arr.isEmpty()) return -1;
-                return computeTownActive(arr.get(0).getAsJsonObject());
-            } catch (RuntimeException e) {
-                return -1;
-            }
-        }, executor);
-    }
-
     /**
      * When this town becomes overclaimable, from its residents' purge dates.
      *
@@ -848,20 +829,6 @@ public class EarthMcApiClient {
             }
         }
         return TownOverclaimProjection.NONE;   // stays safe for as long as we can see
-    }
-
-    private int computeTownActive(JsonObject t) {
-        java.util.List<String> ids = extractResidentIds(t);
-        int n = ids.size();
-        if (n == 0) return 0;
-        if (n > MAX_RESIDENT_LOOKUP) return -1;
-        long now = System.currentTimeMillis();
-        java.util.List<Long> dates = collectRemovalDates(ids, now);
-        if (dates == null) return -1;                    // a batch failed → unreliable
-        int returned = dates.size();
-        int activeReturned = 0;
-        for (long d : dates) if (d > now) activeReturned++;
-        return activeReturned + (n - returned);          // opted-out residents are omitted → counted active
     }
 
     private static java.util.List<String> extractResidentIds(JsonObject obj) {

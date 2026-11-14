@@ -239,6 +239,11 @@ public class WorldMapRenderer {
         return squaremapTiles.recentRefusalStatus();
     }
 
+    /** Why the squaremap layer is blank, or null while it is drawing. */
+    public String imageryProblem() {
+        return squaremapTiles.imageryProblem();
+    }
+
     /** Drops every cached squaremap tile — used when the map switches world. */
     public void clearSquaremapTiles() {
         squaremapTiles.clearAll();

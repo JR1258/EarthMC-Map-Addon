@@ -116,7 +116,7 @@ public abstract class MixinGuiMap {
         // Clear the search bar when the map is reopened (new GuiMap instance) or panned. Tracked on the
         // raw camera every frame, regardless of dimension. jumpTo() suppresses the next pan-clear so that
         // centre-on-select doesn't wipe the bar.
-        TownyMapMod.noteWorldMapInjectAlive();
+        TownyMapMod.noteWorldMapSurfaceAlive();
         TownyMapMod.onWorldMapFrame(this, cameraX, cameraZ);
         // A world switch leaves the camera at coordinates belonging to the world we left. Re-aim before
         // anything is drawn, and suppress the pan-clear so it does not read as the user panning.

@@ -73,6 +73,25 @@ final class SquaremapTileRenderer {
     /** Newest refusal status and when it happened, so the map can say why the imagery is blank. */
     private volatile int lastRefusedStatus = 0;
     private volatile long lastRefusedMs = 0;
+    /**
+     * Blank-imagery diagnostics.
+     *
+     * <p>A refusal is the one tile failure that ever reached the screen. A timeout, a decode error, an
+     * upload error and an upload the frame budget never got to are all silent, and from outside they
+     * render identically: a dark map, a toggle stuck on "Squaremap...", and nothing anyone thought to
+     * read. These let the status line say the layer has drawn nothing, and let one log line say which
+     * of the four stages it died at.
+     */
+    private static final long BLANK_IMAGERY_GRACE_MS = 15_000L;
+    private volatile long worldMapRenderedMs = 0;
+    private volatile long worldMapBlankSinceMs = 0;
+    private volatile int textureCount = 0;
+    private final java.util.concurrent.atomic.AtomicInteger loadFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicInteger uploadFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile String lastFailureDetail = null;
+    private volatile boolean loggedBlankImagery = false;
     private final Map<TileKey, LoadedTile> completedTiles = new ConcurrentHashMap<>();
     /** Bumped on every clearAll() so responses for the previous world can be told apart and dropped. */
     private volatile int worldGeneration = 0;
@@ -137,6 +156,14 @@ final class SquaremapTileRenderer {
     private void render(GuiGraphicsExtractor ctx, double cameraX, double cameraZ, double blockScale, int sw, int sh,
                         double worldLeft, double worldRight, double worldTop, double worldBottom,
                         boolean moving, NetworkPolicy policy, CircleClip circleClip) {
+        // World map only: the status line this feeds is the world map's, and the minimap draws the same
+        // cache from its own surface. Stamped before anything can fail, so "switched on and has drawn
+        // nothing" is measured from the first frame the layer was actually asked for.
+        if (policy == NetworkPolicy.WORLD_MAP) {
+            long nowMs = System.currentTimeMillis();
+            worldMapRenderedMs = nowMs;
+            if (worldMapBlankSinceMs == 0) worldMapBlankSinceMs = nowMs;
+        }
         int zoom = chooseTileZoom(blockScale);
         PanDirection panDirection = updatePanDirection(cameraX, cameraZ);
         processCompletedTiles(moving, zoom, worldLeft, worldRight, worldTop, worldBottom);
@@ -494,10 +521,13 @@ final class SquaremapTileRenderer {
                 textureLoadedAt.put(key, System.currentTimeMillis());
                 failedAt.remove(key);
                 evictOldTextures(client);
+                textureCount = textures.size();
                 uploaded++;
             } catch (Exception e) {
                 failedAt.put(loaded.key(), System.currentTimeMillis());
                 loaded.image().close();
+                uploadFailures.incrementAndGet();
+                lastFailureDetail = describe(e);
                 LOGGER.warn("[TownyMap] Failed to upload squaremap tile {}: {}", loaded.key(), e.getMessage());
             }
         }
@@ -618,6 +648,8 @@ final class SquaremapTileRenderer {
             if (previous != null) previous.image().close();
         } catch (Exception e) {
             failedAt.put(key, System.currentTimeMillis());
+            loadFailures.incrementAndGet();
+            lastFailureDetail = describe(e);
             LOGGER.warn("[TownyMap] Failed to load squaremap tile {}: {}", key, e.getMessage());
         }
     }
@@ -674,6 +706,7 @@ final class SquaremapTileRenderer {
             textureLoadedAt.remove(victim.getKey());
             tileEtags.remove(victim.getKey());   // evicted texture: its ETag would validate nothing
         }
+        textureCount = textures.size();
     }
 
     boolean isLoading() {
@@ -727,6 +760,11 @@ final class SquaremapTileRenderer {
         textureLoadedAt.clear();
         tileEtags.clear();
         failedAt.clear();
+        // A world switch restarts the blank-imagery clock. The new world legitimately has nothing drawn
+        // yet, and judging it on the old one's timer would report a fault the moment it opens.
+        textureCount = 0;
+        worldMapBlankSinceMs = 0;
+        loggedBlankImagery = false;
         // Take each tile OUT of the map before closing its image. processCompletedTiles claims one with
         // remove(key, value) and uploads only if it wins that race; closing while the entry was still
         // reachable let it win and then upload freed memory, which uploads as a black or noise-filled
@@ -742,6 +780,53 @@ final class SquaremapTileRenderer {
     /** Status code of a tile refusal in the last 30s, or 0 if the imagery is loading normally. */
     int recentRefusalStatus() {
         return System.currentTimeMillis() - lastRefusedMs < 30_000L ? lastRefusedStatus : 0;
+    }
+
+    /**
+     * Why the squaremap layer is blank, short enough for the status line -- or null while it is fine.
+     *
+     * <p>"Fine" is one tile on screen. A map that has drawn something and is merely missing an edge
+     * tile is working; a map that has drawn nothing for 15s with the layer switched on is not, whatever
+     * the cause. The grace period covers a cold start, where having nothing yet is simply normal.
+     *
+     * <p>The screen gets the fact, the log gets the evidence -- one line, once, carrying the counts
+     * that say which stage failed. Without it every stage after the HTTP status looked the same from
+     * outside, which is how one of these ran for a week with nobody able to say what was wrong.
+     */
+    String imageryProblem() {
+        if (textureCount > 0) return null;
+        long since = worldMapBlankSinceMs;
+        if (since == 0) return null;
+        long now = System.currentTimeMillis();
+        // Only while the layer is actually being asked for. Switched off, it is blank on purpose.
+        if (now - worldMapRenderedMs > 2_000L) return null;
+        long blankMs = now - since;
+        if (blankMs < BLANK_IMAGERY_GRACE_MS) return null;
+
+        int loadFails = loadFailures.get();
+        int uploadFails = uploadFailures.get();
+        int pending = completedTiles.size();
+        if (!loggedBlankImagery) {
+            loggedBlankImagery = true;
+            LOGGER.warn("[TownyMap] squaremap layer has drawn no imagery for {}s -- {} download "
+                    + "failure(s), {} upload failure(s), {} tile(s) decoded but never uploaded, "
+                    + "{} request(s) in flight. Last error: {}",
+                    blankMs / 1000L, loadFails, uploadFails, pending, loading.size(),
+                    lastFailureDetail == null ? "none" : lastFailureDetail);
+        }
+        // Most specific first: an upload that threw is a different fault from one never attempted.
+        if (uploadFails > 0) return "Map imagery failing (upload)";
+        if (loadFails > 0) return "Map imagery failing (download)";
+        if (pending > 0) return "Map imagery stalled";
+        return "Map imagery not loading";
+    }
+
+    /** Exception summary for the log: getMessage() alone is routinely null or empty on IO failures. */
+    private static String describe(Throwable t) {
+        String msg = t.getMessage();
+        return (msg == null || msg.isBlank())
+                ? t.getClass().getSimpleName()
+                : t.getClass().getSimpleName() + ": " + msg;
     }
 
     private static int circleClipStripHeight(double radius) {

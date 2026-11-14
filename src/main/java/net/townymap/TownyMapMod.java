@@ -585,6 +585,14 @@ public class TownyMapMod implements ClientModInitializer {
         if (refused != 0) {
             return new MapDataStatus("Map imagery refused (HTTP " + refused + ")", STATUS_BAD);
         }
+        // A refusal is the only tile failure that ever reached the screen. Everything after the HTTP
+        // status -- a timeout, a decode error, an upload error, an upload the frame budget never got to
+        // -- drew a dark map and said nothing at all, which is indistinguishable from the layer being
+        // switched off and is how one of these ran for a week undiagnosed.
+        String imagery = renderer != null ? renderer.imageryProblem() : null;
+        if (imagery != null) {
+            return new MapDataStatus(imagery, STATUS_BAD);
+        }
         // Claims reload every 60s, so anything past two intervals means something is quietly wrong.
         return new MapDataStatus("Claims " + age, ageSec > 150 ? STATUS_STALE : STATUS_OK);
     }
@@ -2370,12 +2378,30 @@ public class TownyMapMod implements ClientModInitializer {
     private static volatile boolean loggedXaeroNotReady = false;
 
     private static volatile long lastWorldMapInjectMs = 0;
+    private static volatile long lastWorldMapSurfaceMs = 0;
     private static volatile boolean warnedInjectsDead = false;
+    private static volatile boolean warnedSurfaceDead = false;
     private static volatile long mapOpenSinceMs = 0;
 
     /** Called from each GuiMap inject, so we can tell whether they are actually running. */
     public static void noteWorldMapInjectAlive() {
         lastWorldMapInjectMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Called from the inject that draws the map surface -- the squaremap layer and the town claims.
+     *
+     * <p>Reported separately because it is the fragile one. The other two anchor on a method name;
+     * this one anchors on a field read inside extractRenderState, and that kind of anchor has stopped
+     * matching across a Xaero update before. Against a single shared timestamp the two robust injects
+     * kept refreshing it on this one's behalf, so the "hooks did not take" warning could never fire
+     * for the only inject at real risk of failing: the world map lost its imagery and its claims and
+     * still reported itself perfectly healthy.
+     */
+    public static void noteWorldMapSurfaceAlive() {
+        long now = System.currentTimeMillis();
+        lastWorldMapInjectMs = now;
+        lastWorldMapSurfaceMs = now;
     }
 
     /**
@@ -2385,9 +2411,15 @@ public class TownyMapMod implements ClientModInitializer {
      * also means it fails in complete silence, and the mod looks broken with no way to tell why. Three
      * separate reports this month were some version of that. If the map screen is up and neither inject
      * has fired for two seconds, the hooks did not take.
+     *
+     * <p>Checked at two levels, because losing all of them and losing only the surface one look nothing
+     * alike from the outside. With every inject dead the mod is plainly absent. With just the surface
+     * one dead the toggles still draw, still respond and still read ON, while the layer they switch is
+     * simply never painted -- so the one failure most likely to happen was also the one that looked
+     * least like a failure.
      */
     private static void tickWorldMapInjectHealth() {
-        if (warnedInjectsDead) return;
+        if (warnedInjectsDead && warnedSurfaceDead) return;
         // isWorldMapOpen(), not isWorldMapScreenActive(): the latter counts Xaero's settings and
         // waypoint dialogs as the map, and only GuiMap runs our injects. Sitting in Xaero's own
         // world-map options for two seconds used to be enough to be told Xaero was incompatible.
@@ -2396,16 +2428,38 @@ public class TownyMapMod implements ClientModInitializer {
         if (mapOpenSinceMs == 0) mapOpenSinceMs = now;
         // Give the screen two seconds to draw a frame before judging it.
         if (now - mapOpenSinceMs < 2000L) return;
-        if (lastWorldMapInjectMs != 0 && now - lastWorldMapInjectMs < 2000L) return;
-        warnedInjectsDead = true;
-        String ver = net.fabricmc.loader.api.FabricLoader.getInstance()
+
+        boolean anyAlive = lastWorldMapInjectMs != 0 && now - lastWorldMapInjectMs < 2000L;
+        boolean surfaceAlive = lastWorldMapSurfaceMs != 0 && now - lastWorldMapSurfaceMs < 2000L;
+
+        if (!anyAlive) {
+            if (warnedInjectsDead) return;
+            warnedInjectsDead = true;
+            String ver = xaeroWorldMapVersion();
+            LOGGER.warn("[TownyMap] Our world map hooks are not running - Xaero's World Map {} is not "
+                    + "compatible with this build. Update Xaero's World Map.", ver);
+            sendFeedback("Could not hook Xaero's World Map (" + ver + "). Update it, or report this.",
+                    ChatFormatting.RED);
+            return;
+        }
+
+        if (!surfaceAlive && !warnedSurfaceDead) {
+            warnedSurfaceDead = true;
+            String ver = xaeroWorldMapVersion();
+            LOGGER.warn("[TownyMap] Our world-map surface hook is not running - Xaero's World Map {} "
+                    + "has moved the anchor it attaches to. The squaremap layer and the town claims "
+                    + "will not draw on the world map; the minimap is unaffected. Update Xaero's "
+                    + "World Map.", ver);
+            sendFeedback("Could not draw on Xaero's World Map (" + ver + "): no map imagery or claims. "
+                    + "Update Xaero's World Map, or report this.", ChatFormatting.RED);
+        }
+    }
+
+    private static String xaeroWorldMapVersion() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getModContainer("xaeroworldmap")
                 .map(m -> m.getMetadata().getVersion().getFriendlyString())
                 .orElse("not installed");
-        LOGGER.warn("[TownyMap] Our world map hooks are not running - Xaero's World Map {} is not "
-                + "compatible with this build. Update Xaero's World Map.", ver);
-        sendFeedback("Could not hook Xaero's World Map (" + ver + "). Update it, or report this.",
-                ChatFormatting.RED);
     }
 
     private static String warnedGateAddress = null;

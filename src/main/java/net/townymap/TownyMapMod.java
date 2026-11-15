@@ -64,7 +64,6 @@ public class TownyMapMod implements ClientModInitializer {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type TOWN_CACHE_TYPE = new TypeToken<Map<String, TownPopupData>>() {}.getType();
     private static final long TOWN_DETAILS_SAVE_DELAY_MS = 2_000L;
-    private static final long TOWN_DETAILS_MAX_AGE_MS = 60_000L;
     private static final long DETAIL_REQUEST_DEFER_MS = 2_000L;
     private static final long OPTIMISTIC_CLAIM_TTL_MS = 20_000L;
     private static final long PENDING_CLAIM_TTL_MS = 12_000L;
@@ -90,7 +89,6 @@ public class TownyMapMod implements ClientModInitializer {
     private static double lastWorldMapScale = Double.NaN;
     private static long worldMapMovingUntilMs = 0;
     private static final Map<String, TownPopupData> townDetailsCache = new ConcurrentHashMap<>();
-    private static final Map<String, Long> townDetailsFetchedAt = new ConcurrentHashMap<>();
     private static final Set<String> townDetailsLoading = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> townDetailsDeferredAt = new ConcurrentHashMap<>();
     // On-demand per-resident last-login lookups, kept OFF the mass fetches. Nations only now: the
@@ -3765,7 +3763,7 @@ public class TownyMapMod implements ClientModInitializer {
         if (fallback != null) {
             showLookupResult(fallback, screenX, screenY, worldX, worldZ, fallbackTarget);
             // Archive: the live API doesn't know these historical towns — keep the snapshot popup, never fetch.
-            if (isArchiveMode() || isTownDetailsFresh(fallbackKey)) return true;
+            if (isArchiveMode()) return true;
         } else if (isArchiveMode()) {
             TownInfoOverlay.dismiss();   // archived town with no seeded detail — nothing live to fall back to
             return true;
@@ -3824,7 +3822,7 @@ public class TownyMapMod implements ClientModInitializer {
         long lookupId = townLookupId.incrementAndGet();
         if (fallback != null) {
             showLookupResult(fallback, sx, sy, worldX, worldZ, fallbackTarget);
-            if (isArchiveMode() || isTownDetailsFresh(fallbackKey)) return;   // archive: keep the snapshot popup
+            if (isArchiveMode()) return;   // archive: keep the snapshot popup
         } else if (isArchiveMode()) {
             TownInfoOverlay.dismiss();
             return;
@@ -4177,28 +4175,19 @@ public class TownyMapMod implements ClientModInitializer {
         deferredAt.put(key, now);
     }
 
-    private static boolean isTownDetailsFresh(String key) {
-        if (!townDetailsCache.containsKey(key)) return false;
-        Long fetchedAt = townDetailsFetchedAt.get(key);
-        return fetchedAt != null && System.currentTimeMillis() - fetchedAt < TOWN_DETAILS_MAX_AGE_MS;
-    }
-
     private static void cacheTownDetails(String requestedKey, TownPopupData data) {
         if (data == null || data == TownPopupData.WILDERNESS) return;
         // A map-built card is a placeholder shown while the API is asked, not an answer. Caching one
-        // makes isTownDetailsFresh() report the town as already known, so the fetch that would
-        // complete it never runs and the card stays half-filled -- and it would be written to the
-        // on-disk cache and read back next session as though EarthMC had returned it.
+        // puts it straight back on screen as the instant fallback the next time this town is opened,
+        // and writes it to the on-disk cache to be read back next session as though EarthMC had
+        // returned it.
         if (data.mapOnly()) return;
-        long now = System.currentTimeMillis();
         String canonicalKey = townKey(data.townName());
         if (requestedKey != null && !requestedKey.isBlank()) {
             townDetailsCache.put(requestedKey, withMapTotals(requestedKey, data));
-            townDetailsFetchedAt.put(requestedKey, now);
             townDetailsDeferredAt.remove(requestedKey);
         }
         townDetailsCache.put(canonicalKey, withMapTotals(canonicalKey, data));
-        townDetailsFetchedAt.put(canonicalKey, now);
         townDetailsDeferredAt.remove(canonicalKey);
     }
 
@@ -5079,7 +5068,6 @@ public class TownyMapMod implements ClientModInitializer {
                     // Placeholders are not answers, and a build before this check could write them.
                     if (e.getValue() == null || e.getValue().mapOnly()) { placeholders++; continue; }
                     townDetailsCache.put(e.getKey(), e.getValue());
-                    townDetailsFetchedAt.put(e.getKey(), 0L);
                 }
                 if (placeholders > 0) {
                     LOGGER.info("[TownyMap] Dropped {} map-built placeholder(s) from the town cache",
@@ -5137,7 +5125,6 @@ public class TownyMapMod implements ClientModInitializer {
         for (TownData t : live) keep.add(townKey(t.name()));
         int before = townDetailsCache.size();
         townDetailsCache.keySet().retainAll(keep);
-        townDetailsFetchedAt.keySet().retainAll(keep);
         int dropped = before - townDetailsCache.size();
         if (dropped > 0) {
             LOGGER.info("[TownyMap] Town detail cache: dropped {} entries for towns no longer on the map",

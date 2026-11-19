@@ -192,7 +192,16 @@ public class TownyMapMod implements ClientModInitializer {
     }
 
     private static void onGameMessage(Component message, boolean overlay) {
-        if (apiClient == null || !isActiveOnCurrentServer() || message == null) return;
+        if (message == null) return;
+        // Ahead of every other gate on purpose. The window is opened by the player, in settings,
+        // seconds earlier -- so it outranks "EarthMC Only" and the access check, both of which would
+        // otherwise swallow the one reply the player opened it for. Overlay lines are the action bar
+        // and never carry a command's output.
+        if (!overlay && net.townymap.api.ApiKeyCapture.armed()) {
+            String found = net.townymap.api.ApiKeyCapture.findKey(message.getString());
+            if (found != null) { acceptCapturedApiKey(found); return; }
+        }
+        if (apiClient == null || !isActiveOnCurrentServer()) return;
         // Shop results are independent of the claim flow, so they have to be read before the
         // pending-claim early return below or they'd only ever parse right after a /town claim.
         if (net.townymap.integration.ShopWaypoints.onGameMessage(message.getString())) return;
@@ -4147,6 +4156,31 @@ public class TownyMapMod implements ClientModInitializer {
         // Let the alliance source be tried again at once rather than at the end of its doubling wait.
         allianceLoadedMs = 0L;
         allianceRetryMs = ALLIANCE_RETRY_MIN_MS;
+    }
+
+    /** Tells the player the window is open, since settings closes to let them type the command. */
+    public static void announceKeyCaptureArmed() {
+        sendFeedback("Reading chat for " + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
+                + "s. Run /api key create and your key will be saved automatically.",
+                ChatFormatting.YELLOW);
+    }
+
+    /**
+     * Stores a key read out of chat and asks EarthMC to confirm it.
+     *
+     * <p>The key itself is never logged or echoed back -- only its length, which is the one detail
+     * that separates a wrong key from one that arrived cut short.
+     */
+    private static void acceptCapturedApiKey(String key) {
+        net.townymap.api.ApiKeyCapture.cancel();
+        if (config == null) return;
+        String normalized = TownyMapConfig.normalizeApiKey(key);
+        if (normalized.isEmpty()) return;
+        config.earthMcApiKey = normalized;
+        config.save();
+        applyApiKey();
+        sendFeedback("Picked your API key up from chat (" + normalized.length()
+                + " characters) and saved it. Checking it with EarthMC now.", ChatFormatting.GREEN);
     }
 
     private static void sendFeedback(String message, ChatFormatting color) {

@@ -164,6 +164,10 @@ public class TownyMapConfigScreen extends Screen {
     private boolean awaitingScreenshotKey;
     private boolean awaitingRefreshKey;
     private boolean awaitingStatsKey;
+    /** Last value the key box settled on, and when -- see {@link #tick()}. */
+    private String pendingApiKey = "";
+    private long pendingApiKeyAtMs = 0L;
+    private int lastApiKeyLength = 0;
     private String searchQuery = "";
     private int scrollOffset;
     private int contentHeight;
@@ -446,8 +450,12 @@ public class TownyMapConfigScreen extends Screen {
         // drops the tail. A key cut short is a key EarthMC refuses, with nothing on screen to
         // explain why, so this must never be tightened to a guess at the current length.
         apiKeyField.setMaxLength(512);
+        apiKeyField.setResponder(this::onApiKeyTyped);
         inputRow("EarthMC API Key", apiKeyField);
         action(apiKeyButtonLabel(), this::submitApiKey);
+        action(net.townymap.api.ApiKeyCapture.armed()
+                ? "Reading chat... " + net.townymap.api.ApiKeyCapture.secondsLeft() + "s left"
+                : "Get Key From Chat", this::startKeyCapture);
         if (!cfg.earthMcApiKey.isEmpty()) action("Clear API Key", this::clearApiKey);
 
         archiveField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("dd/mm/yyyy"));
@@ -740,6 +748,72 @@ public class TownyMapConfigScreen extends Screen {
      * Saves a newly typed key, then asks EarthMC to confirm it. An empty box means "just re-test the
      * key I already have", so the button works as both. The value is never logged or echoed back.
      */
+    /**
+     * Submits the key on its own, so Enter is a shortcut rather than a requirement.
+     *
+     * <p>Enter was the only way to commit a typed key, and people reported keys that never took --
+     * the box holds the value quite happily without it, and nothing on screen says it is waiting.
+     *
+     * <p>A paste arrives as one change that jumps the length by the whole key, and is committed
+     * almost at once. A key typed by hand grows a character at a time, and waits much longer for the
+     * typing to stop, so a pause in the middle of typing cannot submit half a key.
+     */
+    private void onApiKeyTyped(String value) {
+        String v = TownyMapConfig.normalizeApiKey(value);
+        int jumped = v.length() - lastApiKeyLength;
+        lastApiKeyLength = v.length();
+        if (v.length() < MIN_PLAUSIBLE_KEY) { pendingApiKey = ""; pendingApiKeyAtMs = 0L; return; }
+        pendingApiKey = v;
+        pendingApiKeyAtMs = System.currentTimeMillis() + (jumped >= 20 ? 0L : TYPED_SETTLE_MS);
+    }
+
+    /** Shortest thing worth treating as a whole key; matches ApiKeyCapture's own floor. */
+    private static final int MIN_PLAUSIBLE_KEY = 48;
+    /** How long typing must stop before a hand-typed key is committed. */
+    private static final long TYPED_SETTLE_MS = 1_500L;
+    /** Settle time after the jump, for both paths. */
+    private static final long COMMIT_DELAY_MS = 350L;
+
+    @Override
+    public void tick() {
+        super.tick();
+        // Deliberately no rebuild for the capture countdown. rebuildWidgets() recreates the key box,
+        // which is never prefilled, so ticking a label would wipe whatever was being typed into it --
+        // and the window is normally counting down with this screen closed anyway. The label is read
+        // once, when the screen opens.
+        if (pendingApiKeyAtMs == 0L || apiKeyField == null) return;
+        if (System.currentTimeMillis() - pendingApiKeyAtMs < COMMIT_DELAY_MS) return;
+        if (!TownyMapConfig.normalizeApiKey(apiKeyField.getValue()).equals(pendingApiKey)) return;
+        pendingApiKey = "";
+        pendingApiKeyAtMs = 0L;
+        lastApiKeyLength = 0;
+        submitApiKey();
+    }
+
+    /** Asks before reading anything, then closes settings so the command can actually be typed. */
+    private void startKeyCapture() {
+        net.minecraft.client.Minecraft mc = this.minecraft;
+        if (mc == null) return;
+        if (net.townymap.api.ApiKeyCapture.armed()) { net.townymap.api.ApiKeyCapture.cancel(); this.rebuildWidgets(); return; }
+        mc.gui.setScreen(new net.minecraft.client.gui.screens.ConfirmScreen(
+                ok -> {
+                    if (!ok) { mc.gui.setScreen(this); return; }
+                    net.townymap.api.ApiKeyCapture.arm();
+                    mc.gui.setScreen(null);
+                    TownyMapMod.announceKeyCaptureArmed();
+                },
+                Component.literal("Read chat to pick up your API key?"),
+                Component.literal("For the next "
+                        + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
+                        + " seconds this reads incoming chat, looking only for an EarthMC API key. "
+                        + "Settings will close so you can run /api key create, and the key is saved "
+                        + "the moment it appears. Nothing else is read, kept or sent anywhere, and "
+                        + "the window closes on its own."),
+                Component.literal("Read chat for "
+                        + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000) + "s"),
+                Component.literal("Cancel")));
+    }
+
     private void submitApiKey() {
         String typed = TownyMapConfig.normalizeApiKey(apiKeyField.getValue());
         if (!typed.isEmpty()) {

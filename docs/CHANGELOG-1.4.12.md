@@ -13,7 +13,7 @@
 - Your last ten searches sit under the search bar, newest first, and lead to wherever that town, nation or player is now. "Reset All" no longer clears them.
 
 **Performance**
-- Fixed several runaway request loops -- one queued 3.2 million lookups into a 5 GB heap, another fired 209 requests in 18 seconds -- and took the measured waste off the minimap, hover and search paths.
+- Took the measured waste off the minimap, hover and search paths.
 - Live player positions now come from the map, spending no API budget. Caches no longer grow for a whole session or keep towns that have left the map.
 
 **Fixes**

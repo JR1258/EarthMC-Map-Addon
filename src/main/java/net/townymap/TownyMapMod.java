@@ -4004,19 +4004,32 @@ public class TownyMapMod implements ClientModInitializer {
         }
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null) return;           // wait until a world is loaded
-        if (mc.gui.screen() instanceof net.townymap.gui.BlockedScreen) return;
+        if (mc.gui.screen() != null) return;                  // still joining, or busy elsewhere
         blockedNoticeShown = true;
-        mc.gui.setScreen(new net.townymap.gui.BlockedScreen(mc.gui.screen(), blocklist.message()));
+        mc.gui.setScreen(new net.townymap.gui.BlockedScreen(null, blocklist.message()));
     }
 
+    /** Posts per launch, so a client that keeps clearing screens cannot turn a retry into a flicker. */
+    private static final int MAX_API_KEY_NOTICE_POSTS = 3;
+    private static int apiKeyNoticePosts = 0;
+
     /**
-     * Puts the "you can add an API key" notice up once, ever.
+     * Puts the "you can add an API key" notice up once -- once it has actually been read, not once it
+     * has been posted.
      *
      * <p>Only on EarthMC, and only with no key set: there is nothing to say to someone who already
-     * has one, and nothing the key would do on another server. The flag is written the moment the
-     * screen goes up and saved with it, so this cannot repeat on the next launch -- and it is set
-     * even when the player already has a key, so nobody who set one early is shown it later if they
-     * ever clear it.
+     * has one, and nothing the key would do on another server. A player who already has a key is
+     * marked as having seen it and shown nothing, so clearing a key later does not summon a notice
+     * they never needed.
+     *
+     * <p>Waits for no screen at all, rather than for a world to exist. A world exists for seconds
+     * before a join settles, with the terrain screen still up and about to be cleared -- and the
+     * clear takes our notice with it, leaving the player a single frame if that. That is the trap
+     * recorded in {@link #refreshAccess}, and this method sat in it: the flag was written as the
+     * screen went up, so one lost frame spent the only showing there would ever be. Hence both
+     * halves of the fix -- post only into an idle client, and let {@link #markApiKeyNoticeSeen()}
+     * write the flag when the player dismisses the screen, which is the first moment we know it was
+     * on screen long enough to read.
      *
      * <p>Rides on the same tick as the blocked notice, and defers to it: being told your access is
      * gone and being told about an optional key in the same breath would be a poor pair.
@@ -4026,14 +4039,39 @@ public class TownyMapMod implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null) return;           // wait until a world is loaded
         if (!isOnEarthMcServer()) return;                     // pointless anywhere else
-        net.minecraft.client.gui.screens.Screen open = mc.gui.screen();
-        if (open instanceof net.townymap.gui.BlockedScreen
-                || open instanceof net.townymap.gui.ApiKeyNoticeScreen) return;
+        // Someone who already pasted a key needs no instructions -- mark it seen and stay quiet.
+        if (!config.earthMcApiKey.isBlank()) { markApiKeyNoticeSeen(); return; }
+        if (mc.gui.screen() != null) return;                  // still joining, or busy elsewhere
+        if (apiKeyNoticePosts >= MAX_API_KEY_NOTICE_POSTS) return;
+        apiKeyNoticePosts++;
+        mc.gui.setScreen(new net.townymap.gui.ApiKeyNoticeScreen(null));
+    }
+
+    /**
+     * Records that the notice has been read, which only the screen can say.
+     *
+     * <p>Called when the player dismisses it, by either button or Esc. Until then the notice is
+     * still owed, and a launch that loses it to a screen clear shows it again next time instead of
+     * counting it as read.
+     */
+    public static void markApiKeyNoticeSeen() {
+        if (config == null || config.apiKeyNoticeShown) return;
         config.apiKeyNoticeShown = true;
         config.save();
-        // Someone who already pasted a key needs no instructions -- mark it seen and stay quiet.
-        if (!config.earthMcApiKey.isBlank()) return;
-        mc.gui.setScreen(new net.townymap.gui.ApiKeyNoticeScreen(open));
+    }
+
+    /**
+     * Opens the notice on demand, from settings.
+     *
+     * <p>Ignores both the flag and the key, unlike the automatic path: someone who asks for it wants
+     * to see it, whatever it decided on their behalf at launch. Without this the panel was reachable
+     * exactly once per install and unreachable afterwards -- by anyone, including whoever had just
+     * closed it by accident.
+     */
+    public static void showApiKeyNotice(net.minecraft.client.gui.screens.Screen parent) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return;
+        mc.gui.setScreen(new net.townymap.gui.ApiKeyNoticeScreen(parent));
     }
 
     public static boolean isActiveOnCurrentServer() {

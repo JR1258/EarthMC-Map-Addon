@@ -273,7 +273,7 @@ public final class ArchiveClient {
      *  (maxChunks stays -1 — the archive knows the claimed count, not the town's claim limit). */
     private static TownPopupData toPopupData(ArchiveTown a) {
         return new TownPopupData(a.name(), a.nation(), "", a.board(), a.mayor(), a.chunks(), a.founded(), a.pvp(),
-                a.isPublic(), false, false, false, false, !a.nation().isBlank(), a.residentCount(), 0, -1, -1, false);
+                a.isPublic(), false, false, false, false, !a.nation().isBlank(), a.residentCount(), 0, -1, -1, false, false);
     }
 
     /** Splits a comma-separated name list, dropping the "None" placeholder and blanks. */

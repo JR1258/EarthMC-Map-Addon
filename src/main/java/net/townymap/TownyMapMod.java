@@ -88,6 +88,8 @@ public class TownyMapMod implements ClientModInitializer {
     private static double lastWorldMapScale = Double.NaN;
     private static long worldMapMovingUntilMs = 0;
     private static final Map<String, TownPopupData> townDetailsCache = new ConcurrentHashMap<>();
+    /** The keyless /map/v1 record per town. Free to fetch, so it is kept for the card and the totals. */
+    private static final Map<String, net.townymap.model.MapTownData> mapTownCache = new ConcurrentHashMap<>();
     private static final Set<String> townDetailsLoading = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> townDetailsDeferredAt = new ConcurrentHashMap<>();
     // On-demand per-resident last-login lookups, kept OFF the mass fetches. Nations only now: the
@@ -3793,9 +3795,11 @@ public class TownyMapMod implements ClientModInitializer {
         // reader -- rows filling in, PVP turning into Open, the resident count jumping from the roll
         // to the active figure. So it is held back as the fallback for a request that FAILS, and the
         // ordinary loading state covers the wait.
+        // The keyless exception here is gone too. It existed because without a key nothing better was
+        // ever coming, so a guess beat an empty panel; /map/v1 answers without one, so every reader now
+        // has a real card arriving and none of them should watch a shorter one reshape first.
         TownPopupData mapCard = (clickedTown != null && !isArchiveMode()) ? mapOnlyTownData(clickedTown) : null;
-        TownPopupData fallback = cached != null ? cached
-                : (apiKeyState().usable() ? null : mapCard);
+        TownPopupData fallback = cached;
         MapJumpTarget fallbackTarget = clickedTown == null ? null
                 : new MapJumpTarget(clickedTown.name(), clickedTown.centerX(), clickedTown.centerZ());
         long lookupId = townLookupId.incrementAndGet();
@@ -3815,8 +3819,16 @@ public class TownyMapMod implements ClientModInitializer {
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
         // By name when the claim is ours to name, by position otherwise -- the second only happens with
         // wildernessTownInfo on, and is what answers "is this really unclaimed?" rather than assuming it.
-        (clickedTown != null ? earthMcApi.fetchTown(clickedTown.name())
-                             : earthMcApi.fetchTownAt(worldX, worldZ)).thenAccept(data -> {
+        // Two sources, asked together. /map/v1 needs no key and carries the total resident roll and
+        // the real claim count, neither of which the keyed endpoint gives; /v4 carries everything a
+        // key buys. Whichever answers, the card is built from what actually came back.
+        java.util.concurrent.CompletableFuture<TownPopupData> keyed =
+                clickedTown != null ? earthMcApi.fetchTown(clickedTown.name())
+                                    : earthMcApi.fetchTownAt(worldX, worldZ);
+        java.util.concurrent.CompletableFuture<net.townymap.model.MapTownData> free =
+                clickedTown != null ? earthMcApi.fetchMapTown(clickedTown.name())
+                                    : java.util.concurrent.CompletableFuture.completedFuture(null);
+        keyed.thenCombine(free, TownyMapMod::mergeTownSources).thenAccept(data -> {
             Minecraft client = Minecraft.getInstance();
             if (client == null) return;
             client.execute(() -> {
@@ -3871,7 +3883,9 @@ public class TownyMapMod implements ClientModInitializer {
         final TownPopupData cachedFallback = fallback;
         final MapJumpTarget cachedFallbackTarget = fallbackTarget;
         final double fWorldX = worldX, fWorldZ = worldZ;
-        earthMcApi.fetchTown(townName).thenAccept(data -> {
+        earthMcApi.fetchTown(townName)
+                .thenCombine(earthMcApi.fetchMapTown(townName), TownyMapMod::mergeTownSources)
+                .thenAccept(data -> {
             Minecraft c = Minecraft.getInstance();
             if (c == null) return;
             c.execute(() -> {
@@ -4265,13 +4279,52 @@ public class TownyMapMod implements ClientModInitializer {
                 chunks, f == null ? "" : f.founded(), f != null && f.pvp(),
                 f != null && f.isPublic(),
                 false, false, false, false,            // API-only; mapOnly tells the card to skip them
-                hasNation, residents, 0, -1, -1, true);
+                hasNation, residents, 0, -1, -1, true, false);
+    }
+
+    /**
+     * A town card built from the keyless /map/v1 record.
+     *
+     * <p>Still {@code mapOnly}: open, for-sale, outsider spawn, overclaim, the claim limit and the
+     * active resident count exist only behind a key. Everything else on the card is now real --
+     * including the bank, which is why {@code balanceKnown} is set and the old squaremap-built
+     * placeholder's is not.
+     */
+    /**
+     * Folds the two town sources into the one card.
+     *
+     * <p>A keyed answer wins on everything it knows and takes the two figures it does not -- the
+     * total roll and the claim count -- from /map/v1. With no key, or when the keyed request fails,
+     * the /map/v1 record is the card: real data, just missing what only a key unlocks. Null only
+     * when neither source answered, which leaves the caller's own fallback in place.
+     */
+    private static TownPopupData mergeTownSources(TownPopupData keyed, net.townymap.model.MapTownData free) {
+        if (free != null) mapTownCache.put(townKey(free.name()), free);
+        if (keyed == null) return mapApiTownData(free);
+        if (free == null) return keyed;
+        return keyed.withMapApiTotals(free.residents(), free.claims());
+    }
+
+    private static TownPopupData mapApiTownData(net.townymap.model.MapTownData m) {
+        if (m == null) return null;
+        boolean hasNation = m.nation() != null && !m.nation().isBlank();
+        return new TownPopupData(
+                m.name(), hasNation ? m.nation() : "", m.discord() == null ? "" : m.discord(),
+                m.board() == null ? "" : m.board(),
+                m.mayor() == null || m.mayor().isBlank() ? "?" : m.mayor(),
+                m.claims(), m.founded(), m.pvp(), m.isPublic(),
+                false, false, false, false,            // key-only; mapOnly tells the card to skip them
+                hasNation, m.residents(), m.balance(), -1, -1, true, true);
     }
 
     private static TownPopupData withMapTotals(String key, TownPopupData data) {
         if (apiClient == null || data == null) return data;
         // An archived popup is that date's; the live markers are today's, so leave it alone.
         if (isArchiveMode()) return data;
+        // /map/v1 first: its roll is EarthMC's own total and its claim count is authoritative. The
+        // squaremap markers stay as the fallback for a town whose record has not been fetched yet.
+        net.townymap.model.MapTownData m = mapTownCache.get(key);
+        if (m != null) return data.withMapApiTotals(m.residents(), m.claims());
         int total = apiClient.getTownResidents(key);
         return total > data.residentCount() ? data.withTotalResidentCount(total) : data;
     }

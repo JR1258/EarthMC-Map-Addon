@@ -27,22 +27,44 @@ public record TownPopupData(
          * balance reads as broke. This flag is what lets the card leave those rows out instead of
          * stating something it does not know.
          */
-        boolean mapOnly
+        boolean mapOnly,
+        /**
+         * Whether {@link #balance()} is a figure we actually have, as opposed to the record's zero.
+         *
+         * <p>{@code mapOnly} used to imply "no balance", because the only keyless card was built from
+         * the squaremap markers and those carry no gold. /map/v1 does carry it, so the two questions
+         * came apart: a card can now be map-built and still know the bank. Without this the keyless
+         * card either hid gold it had or printed a confident "0" for every town on the server.
+         */
+        boolean balanceKnown
 ) {
     public static final TownPopupData WILDERNESS =
             new TownPopupData("Wilderness", "", "", "", "", 0, "", false, false, false, false,
-                    false, false, false, 0, 0, -1, -1, false);
+                    false, false, false, 0, 0, -1, -1, false, false);
 
     /**
      * A copy carrying the town's TOTAL resident count.
      *
-     * <p>The API gives only the active one -- it filters both {@code stats.numResidents} and the
-     * roster to the last 42 days -- so the total comes off the squaremap popup, which still lists
-     * every member. Everything else is left alone.
+     * <p>The keyed API gives only the active one -- it filters both {@code stats.numResidents} and
+     * the roster to the last 42 days -- so the total comes from /map/v1. Everything else is left
+     * alone.
      */
     public TownPopupData withTotalResidentCount(int total) {
         return new TownPopupData(townName, nationName, discord, board, mayor, numChunks, founded, pvp,
                 isPublic, canOutsidersSpawn, isOverClaimed, isOpen, isForSale, hasNation, total,
-                balance, activeResidentCount, maxChunks, mapOnly);
+                balance, activeResidentCount, maxChunks, mapOnly, balanceKnown);
+    }
+
+    /**
+     * A copy carrying the two figures /map/v1 knows better than the keyed API: the total resident
+     * roll and the authoritative claim count. Either is ignored when it is absent or non-positive,
+     * so a partial map answer can never blank a figure the API already supplied.
+     */
+    public TownPopupData withMapApiTotals(int totalResidents, int claims) {
+        return new TownPopupData(townName, nationName, discord, board, mayor,
+                claims > 0 ? claims : numChunks, founded, pvp, isPublic, canOutsidersSpawn,
+                isOverClaimed, isOpen, isForSale, hasNation,
+                totalResidents > 0 ? totalResidents : residentCount,
+                balance, activeResidentCount, maxChunks, mapOnly, balanceKnown);
     }
 }

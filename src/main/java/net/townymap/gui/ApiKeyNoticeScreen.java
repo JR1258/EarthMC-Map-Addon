@@ -129,8 +129,6 @@ public final class ApiKeyNoticeScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
-
         int w = panelWidth();
         int h = panelHeight();
         int left = (this.width - w) / 2;
@@ -151,6 +149,14 @@ public final class ApiKeyNoticeScreen extends Screen {
             }
             y += LINE;
         }
+
+        // Widgets last, so the panel sits under the buttons rather than over them.
+        //
+        // Drawn first, they were painted out by a background that is 94% opaque: present, hovering,
+        // clickable, and all but invisible. That is how this screen shipped, and why its two buttons
+        // were never found -- not clipped, not mispositioned, just buried. TownyMapConfigScreen
+        // draws in this order for the same reason, and says so above its row highlight.
+        super.render(ctx, mouseX, mouseY, delta);
     }
 
     /**

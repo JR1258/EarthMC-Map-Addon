@@ -444,7 +444,7 @@ public class TownyMapConfigScreen extends Screen {
         // way. Typing a new one replaces it; the button below clears it.
         apiKeyField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("EarthMC API Key"));
         apiKeyField.setHint(Component.literal(cfg.earthMcApiKey.isEmpty()
-                ? KEY_COMMAND : "set - type a new key to replace"));
+                ? ApiKeyCaptureFlow.KEY_COMMAND : "set - type a new key to replace"));
         // Generous on purpose. A real EarthMC key is a signed token, not a short id -- a live one
         // measured 171 characters -- and an EditBox does not say it truncated, it just silently
         // drops the tail. A key cut short is a key EarthMC refuses, with nothing on screen to
@@ -796,23 +796,6 @@ public class TownyMapConfigScreen extends Screen {
         submitApiKey();
     }
 
-    /**
-     * Always {@code copy}, never {@code create}, and not a guess.
-     *
-     * <p>EarthMC splits the job three ways: {@code create} mints a first key, {@code copy} hands
-     * back one that already exists, {@code delete} is how you rotate. Writing the right one out
-     * would mean knowing whether this player has a key -- and nothing here knows that. An empty
-     * {@link TownyMapConfig#earthMcApiKey} covers a fresh install, a new machine, a cleared config
-     * and a key made for some other tool exactly as well as it covers someone who has never made
-     * one, and no keyless endpoint will answer the question either.
-     *
-     * <p>So it does not guess. {@code copy} is the one command that is safe under every answer: it
-     * cannot mint, cannot rotate, and cannot disturb an account that is already set up -- which
-     * matters all the more because what {@code create} does to an account that already has a key is
-     * undocumented and not in any public source. If no key comes back, that silence is the answer,
-     * and {@link TownyMapMod} offers {@code create} on the spot.
-     */
-    private static final String KEY_COMMAND = "/api key copy";
 
     private String apiKeyChatLabel() {
         return net.townymap.api.ApiKeyCapture.armed()
@@ -839,38 +822,18 @@ public class TownyMapConfigScreen extends Screen {
     }
 
     /** Asks before reading anything, then closes settings so the command can actually be typed. */
+    /**
+     * The settings row's own half of the flow: a toggle, because this row doubles as the countdown
+     * and pressing it again is how a player calls the window off. The prompt and the arming live in
+     * {@link ApiKeyCaptureFlow}, which the first-launch notice offers too.
+     */
     private void startKeyCapture() {
-        net.minecraft.client.Minecraft mc = this.minecraft;
-        if (mc == null) return;
-        if (net.townymap.api.ApiKeyCapture.armed()) { net.townymap.api.ApiKeyCapture.cancel(); this.rebuildWidgets(); return; }
-        String command = KEY_COMMAND;
-        String tail = cfg.earthMcApiKey.isEmpty()
-                ? "If you have not made a key yet, EarthMC will say so and the addon will offer "
-                        + "you the command that makes one."
-                : "Whatever EarthMC hands back replaces the key stored now.";
-        mc.gui.setScreen(new net.minecraft.client.gui.screens.ConfirmScreen(
-                ok -> {
-                    if (!ok) { mc.gui.setScreen(this); return; }
-                    net.townymap.api.ApiKeyCapture.arm();
-                    TownyMapMod.announceKeyCaptureArmed(command);
-                    // Chat, with the command already written out -- all that is left is Enter. It is
-                    // not sent for them: these commands act on their account, which is theirs to
-                    // trigger, and a command typed into their own chat box is visible, editable and
-                    // abandonable in a way one sent on their behalf is not.
-                    mc.gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen(command, false));
-                },
-                Component.literal("Read chat to pick up your API key?"),
-                Component.literal("For the next "
-                        + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
-                        + " seconds this reads incoming chat, looking only for an EarthMC API key. "
-                        + "Chat will open with " + command + " already written out -- press Enter "
-                        + "to send it -- and the key is saved the moment it appears, whether "
-                        + "EarthMC prints it or puts it behind a click-to-copy. " + tail
-                        + " Nothing else is read, kept or sent anywhere, and the window closes on "
-                        + "its own."),
-                Component.literal("Read chat for "
-                        + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000) + "s"),
-                Component.literal("Cancel")));
+        if (net.townymap.api.ApiKeyCapture.armed()) {
+            net.townymap.api.ApiKeyCapture.cancel();
+            this.rebuildWidgets();
+            return;
+        }
+        ApiKeyCaptureFlow.start(this);
     }
 
     private void submitApiKey() {

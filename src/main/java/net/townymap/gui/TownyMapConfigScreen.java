@@ -453,9 +453,7 @@ public class TownyMapConfigScreen extends Screen {
         apiKeyField.setResponder(this::onApiKeyTyped);
         inputRow("EarthMC API Key", apiKeyField);
         action(apiKeyButtonLabel(), this::submitApiKey);
-        action(net.townymap.api.ApiKeyCapture.armed()
-                ? "Reading chat... " + net.townymap.api.ApiKeyCapture.secondsLeft() + "s left"
-                : "Get Key From Chat", this::startKeyCapture);
+        action(apiKeyCaptureLabel(), this::captureOrCopyApiKey);
         if (!cfg.earthMcApiKey.isEmpty()) action("Clear API Key", this::clearApiKey);
 
         archiveField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("dd/mm/yyyy"));
@@ -790,6 +788,38 @@ public class TownyMapConfigScreen extends Screen {
         submitApiKey();
     }
 
+    /**
+     * One button, two jobs.
+     *
+     * <p>With no key stored the useful thing is to go and get one. With a key already stored there
+     * is nothing to fetch, so the useful thing is handing it back -- for a second instance, another
+     * launcher, or just to check what is actually saved, which the box deliberately never shows.
+     */
+    private String apiKeyCaptureLabel() {
+        if (!cfg.earthMcApiKey.isEmpty()) {
+            return apiKeyCopied ? "API key copied to clipboard" : "Copy API Key";
+        }
+        return net.townymap.api.ApiKeyCapture.armed()
+                ? "Reading chat... " + net.townymap.api.ApiKeyCapture.secondsLeft() + "s left"
+                : "Get Key From Chat";
+    }
+
+    private boolean apiKeyCopied = false;
+
+    private void captureOrCopyApiKey() {
+        if (!cfg.earthMcApiKey.isEmpty()) { copyApiKey(); return; }
+        startKeyCapture();
+    }
+
+    /** The player's own key, onto their own clipboard, on their own click. It goes nowhere else. */
+    private void copyApiKey() {
+        net.minecraft.client.Minecraft mc = this.minecraft;
+        if (mc == null || mc.keyboardHandler == null || cfg.earthMcApiKey.isEmpty()) return;
+        mc.keyboardHandler.setClipboard(cfg.earthMcApiKey);
+        apiKeyCopied = true;
+        this.rebuildWidgets();
+    }
+
     /** Asks before reading anything, then closes settings so the command can actually be typed. */
     private void startKeyCapture() {
         net.minecraft.client.Minecraft mc = this.minecraft;
@@ -799,16 +829,21 @@ public class TownyMapConfigScreen extends Screen {
                 ok -> {
                     if (!ok) { mc.gui.setScreen(this); return; }
                     net.townymap.api.ApiKeyCapture.arm();
-                    mc.gui.setScreen(null);
                     TownyMapMod.announceKeyCaptureArmed();
+                    // Chat, with the command already written out -- all that is left is Enter. It is
+                    // not sent for them: /api key create mints a key on their account, which is
+                    // theirs to trigger, and a command typed into their own chat box is visible,
+                    // editable and abandonable in a way one sent on their behalf is not.
+                    mc.gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen(
+                            "/api key create", false));
                 },
                 Component.literal("Read chat to pick up your API key?"),
                 Component.literal("For the next "
                         + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
                         + " seconds this reads incoming chat, looking only for an EarthMC API key. "
-                        + "Settings will close so you can run /api key create, and the key is saved "
-                        + "the moment it appears. Nothing else is read, kept or sent anywhere, and "
-                        + "the window closes on its own."),
+                        + "Chat will open with /api key create already written out -- press Enter to "
+                        + "send it -- and the key is saved the moment it appears. Nothing else is "
+                        + "read, kept or sent anywhere, and the window closes on its own."),
                 Component.literal("Read chat for "
                         + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000) + "s"),
                 Component.literal("Cancel")));

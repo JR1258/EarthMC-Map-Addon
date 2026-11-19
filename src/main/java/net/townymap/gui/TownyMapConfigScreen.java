@@ -454,6 +454,11 @@ public class TownyMapConfigScreen extends Screen {
         inputRow("EarthMC API Key", apiKeyField);
         action(apiKeyButtonLabel(), this::submitApiKey);
         action(apiKeyChatLabel(), this::startKeyCapture);
+        // Reachable on purpose. The notice panel showed itself once per install and had no other
+        // door: a player who closed it by accident, or lost it to a join that had not settled, could
+        // not get the instructions back. It explains what a key adds and what already works without
+        // one, which is worth reading more than once.
+        action("What A Key Adds", () -> net.townymap.TownyMapMod.showApiKeyNotice(this));
         if (!cfg.earthMcApiKey.isEmpty()) {
             action(apiKeyCopyLabel(), this::copyApiKey);
             action("Clear API Key", this::clearApiKey);

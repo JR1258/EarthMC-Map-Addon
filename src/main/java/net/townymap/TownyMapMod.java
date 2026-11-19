@@ -197,7 +197,9 @@ public class TownyMapMod implements ClientModInitializer {
         // otherwise swallow the one reply the player opened it for. Overlay lines are the action bar
         // and never carry a command's output.
         if (!overlay && net.townymap.api.ApiKeyCapture.armed()) {
-            String found = net.townymap.api.ApiKeyCapture.findKey(message.getString());
+            // The whole message, not its visible text: /api key copy hands the key over in a
+            // click-to-copy event, where getString() would show only the words on the line.
+            String found = net.townymap.api.ApiKeyCapture.findKey(message);
             if (found != null) { acceptCapturedApiKey(found); return; }
         }
         if (apiClient == null || !isActiveOnCurrentServer()) return;
@@ -4148,10 +4150,15 @@ public class TownyMapMod implements ClientModInitializer {
         allianceRetryMs = ALLIANCE_RETRY_MIN_MS;
     }
 
-    /** Tells the player the window is open, since settings closes to let them type the command. */
-    public static void announceKeyCaptureArmed() {
+    /**
+     * Tells the player the window is open, since settings closes to let them type the command.
+     *
+     * <p>Takes the command rather than naming one, because which is right depends on whether they
+     * already have a key: {@code create} mints the first, {@code copy} hands back one that exists.
+     */
+    public static void announceKeyCaptureArmed(String command) {
         sendFeedback("Reading chat for " + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
-                + "s. Run /api key create and your key will be saved automatically.",
+                + "s. Run " + command + " and your key will be saved automatically.",
                 Formatting.YELLOW);
     }
 

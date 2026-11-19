@@ -41,6 +41,12 @@ public final class ApiKeyNoticeScreen extends Screen {
     private static final int LINE = 11;
     private static final int GAP = 7;
     private static final int BTN_H = 20;
+    private static final int BTN_GAP = 8;
+
+    /** Named so step 1 can quote the button by the words actually printed on it. */
+    private static final String BTN_CHAT = "Get key from chat";
+    private static final String BTN_SETTINGS = "Open settings";
+    private static final String BTN_SKIP = "Continue without";
 
     /** One drawn row. {@code tail} is appended straight after {@code text} in its own colour, which
      *  is how a command sits inside a sentence without splitting the row into two. */
@@ -74,12 +80,16 @@ public final class ApiKeyNoticeScreen extends Screen {
         rows.add(Row.bullet("Player cards and nation pages"));
 
         rows.add(Row.gap("TO ADD ONE", LABEL));
+        // The button does steps 1 and 3; the manual route stays written down because it has to keep
+        // working for anyone who declines the chat prompt, and because a panel reading only "press
+        // the button" would leave them nothing to fall back on.
+        //
         // copy first, create second. Which one a player needs depends on whether they already have
         // a key, which nothing here can know -- but copy is harmless when they do not, and create
         // is the one that would act on an account that is already set up.
-        rows.add(Row.step("1", "Run ", "/api key copy"));
-        rows.add(Row.step("2", "Never made one? Run ", "/api key create"));
-        rows.add(Row.step("3", "Paste it into ", "Settings > Advanced > EarthMC API Key"));
+        rows.add(Row.step("1", "Press \"" + BTN_CHAT + "\" - it runs ", "/api key copy"));
+        rows.add(Row.step("2", "Never made one? It offers ", "/api key create"));
+        rows.add(Row.step("3", "Or paste one into ", "Settings > Advanced > EarthMC API Key"));
 
         rows.add(Row.gap("EarthMC's API has required a key since 19 November.", DIM));
         rows.add(Row.of("The map side of this addon is unaffected either way.", DIM));
@@ -91,11 +101,22 @@ public final class ApiKeyNoticeScreen extends Screen {
         return h;
     }
 
+    private int buttonWidth(String label) {
+        return this.font.width(label) + 22;
+    }
+
+    private int buttonRowWidth() {
+        return buttonWidth(BTN_CHAT) + BTN_GAP + buttonWidth(BTN_SETTINGS) + BTN_GAP + buttonWidth(BTN_SKIP);
+    }
+
     private int panelWidth() {
         int longest = 0;
         for (Row r : rows) {
             longest = Math.max(longest, r.indent() + this.font.width(r.text()) + this.font.width(r.tail()));
         }
+        // The buttons are contents too. Three of them can out-measure every line of text, and a
+        // panel sized to the text alone would put the last one over its own edge.
+        longest = Math.max(longest, buttonRowWidth());
         return Math.min(this.width - 40, longest + PAD * 2);
     }
 
@@ -110,21 +131,32 @@ public final class ApiKeyNoticeScreen extends Screen {
         int top = (this.height - panelHeight()) / 2;
         int btnY = top + PAD + contentHeight() + GAP;
 
-        // Sized to their labels so neither crowds the other, and centred as a pair.
-        int openW = this.font.width("Open settings") + 22;
-        int skipW = this.font.width("Continue without") + 22;
-        int totalW = openW + 8 + skipW;
-        int x = left + (w - totalW) / 2;
+        // Each sized to its own label so none crowds the next, and the row centred as a whole.
+        int chatW = buttonWidth(BTN_CHAT);
+        int openW = buttonWidth(BTN_SETTINGS);
+        int skipW = buttonWidth(BTN_SKIP);
+        int x = left + (w - buttonRowWidth()) / 2;
 
-        this.addRenderableWidget(Button.builder(Component.literal("Open settings"),
+        // First, because it is the route that does not involve copying a 171-character token by
+        // hand. Cancelling its prompt comes back here rather than dropping the player into the
+        // world, so the panel is not spent by looking at the offer and declining it.
+        this.addRenderableWidget(Button.builder(Component.literal(BTN_CHAT),
+                        b -> {
+                            net.townymap.TownyMapMod.markApiKeyNoticeSeen();
+                            ApiKeyCaptureFlow.start(this);
+                        })
+                .bounds(x, btnY, chatW, BTN_H).build());
+        x += chatW + BTN_GAP;
+        this.addRenderableWidget(Button.builder(Component.literal(BTN_SETTINGS),
                         b -> {
                             net.townymap.TownyMapMod.markApiKeyNoticeSeen();
                             this.minecraft.setScreen(new TownyMapConfigScreen(parent));
                         })
                 .bounds(x, btnY, openW, BTN_H).build());
-        this.addRenderableWidget(Button.builder(Component.literal("Continue without"),
+        x += openW + BTN_GAP;
+        this.addRenderableWidget(Button.builder(Component.literal(BTN_SKIP),
                         b -> this.onClose())
-                .bounds(x + openW + 8, btnY, skipW, BTN_H).build());
+                .bounds(x, btnY, skipW, BTN_H).build());
     }
 
     @Override

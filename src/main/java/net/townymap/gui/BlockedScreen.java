@@ -47,7 +47,6 @@ public final class BlockedScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.extractRenderState(ctx, mouseX, mouseY, delta);
         int w = Math.min(this.width - 60, 380);
         int left = (this.width - w) / 2;
         int top = this.height / 2 - 70;
@@ -63,6 +62,10 @@ public final class BlockedScreen extends Screen {
             ctx.text(this.font, line, left + 12, y, 0xFFC8C8C8, false);
             y += 11;
         }
+
+        // Widgets last; see ApiKeyNoticeScreen. "Message the developer" and "Acknowledge" were
+        // buried under this panel exactly the same way.
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
     }
 
     /** Esc dismisses it like the button; this is a notice, not a wall. */

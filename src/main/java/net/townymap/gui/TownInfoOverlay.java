@@ -312,14 +312,16 @@ public final class TownInfoOverlay {
             residentsLine = "§7Residents: §f§l" + d.residentCount() + " §8(total)";
         }
         lines.add(InfoRow.text(residentsLine));
-        if (!archive && !d.mapOnly()) {
+        // Gold follows balanceKnown, not mapOnly: since EarthMC added /map/v1 a keyless card has a
+        // real bank figure, and gating it on mapOnly hid a number we actually had.
+        if (!archive && d.balanceKnown()) {
             lines.add(InfoRow.text("§7Gold: §f§l"  + formatGold(d.balance())));
         }
         // Reached only when this card IS the answer -- no key, or a request that failed. The
         // right-click path no longer shows a map-built card while a fetch is in flight, so this note
         // cannot flash up and vanish the way it did.
         if (d.mapOnly()) {
-            lines.add(InfoRow.text("§8Map data only - set an API key for gold, open, claim limit"));
+            lines.add(InfoRow.text("§8Map data only - set an API key for open, claim limit"));
             lines.add(InfoRow.text("§8and the active resident count"));
         }
 

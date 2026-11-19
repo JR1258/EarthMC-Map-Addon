@@ -55,16 +55,4 @@ public record TownPopupData(
                 balance, activeResidentCount, maxChunks, mapOnly, balanceKnown);
     }
 
-    /**
-     * A copy carrying the two figures /map/v1 knows better than the keyed API: the total resident
-     * roll and the authoritative claim count. Either is ignored when it is absent or non-positive,
-     * so a partial map answer can never blank a figure the API already supplied.
-     */
-    public TownPopupData withMapApiTotals(int totalResidents, int claims) {
-        return new TownPopupData(townName, nationName, discord, board, mayor,
-                claims > 0 ? claims : numChunks, founded, pvp, isPublic, canOutsidersSpawn,
-                isOverClaimed, isOpen, isForSale, hasNation,
-                totalResidents > 0 ? totalResidents : residentCount,
-                balance, activeResidentCount, maxChunks, mapOnly, balanceKnown);
-    }
 }

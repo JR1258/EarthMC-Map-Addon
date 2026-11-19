@@ -89,8 +89,6 @@ public class TownyMapMod implements ClientModInitializer {
     private static double lastWorldMapScale = Double.NaN;
     private static long worldMapMovingUntilMs = 0;
     private static final Map<String, TownPopupData> townDetailsCache = new ConcurrentHashMap<>();
-    /** The keyless /map/v1 record per town. Free to fetch, so it is kept for the card and the totals. */
-    private static final Map<String, net.townymap.model.MapTownData> mapTownCache = new ConcurrentHashMap<>();
     private static final Set<String> townDetailsLoading = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> townDetailsDeferredAt = new ConcurrentHashMap<>();
     // On-demand per-resident last-login lookups, kept OFF the mass fetches. Nations only now: the
@@ -3774,16 +3772,9 @@ public class TownyMapMod implements ClientModInitializer {
         MapJumpTarget cachedFallbackTarget = fallbackTarget;
         // By name when the claim is ours to name, by position otherwise -- the second only happens with
         // wildernessTownInfo on, and is what answers "is this really unclaimed?" rather than assuming it.
-        // Two sources, asked together. /map/v1 needs no key and carries the total resident roll and
-        // the real claim count, neither of which the keyed endpoint gives; /v4 carries everything a
-        // key buys. Whichever answers, the card is built from what actually came back.
-        java.util.concurrent.CompletableFuture<TownPopupData> keyed =
-                clickedTown != null ? earthMcApi.fetchTown(clickedTown.name())
-                                    : earthMcApi.fetchTownAt(worldX, worldZ);
-        java.util.concurrent.CompletableFuture<net.townymap.model.MapTownData> free =
-                clickedTown != null ? earthMcApi.fetchMapTown(clickedTown.name())
-                                    : java.util.concurrent.CompletableFuture.completedFuture(null);
-        keyed.thenCombine(free, TownyMapMod::mergeTownSources).thenAccept(data -> {
+        fetchTownCard(clickedTown != null ? earthMcApi.fetchTown(clickedTown.name())
+                                          : earthMcApi.fetchTownAt(worldX, worldZ),
+                      clickedTown != null ? clickedTown.name() : null).thenAccept(data -> {
             Minecraft client = Minecraft.getInstance();
             if (client == null) return;
             client.execute(() -> {
@@ -3838,9 +3829,7 @@ public class TownyMapMod implements ClientModInitializer {
         final TownPopupData cachedFallback = fallback;
         final MapJumpTarget cachedFallbackTarget = fallbackTarget;
         final double fWorldX = worldX, fWorldZ = worldZ;
-        earthMcApi.fetchTown(townName)
-                .thenCombine(earthMcApi.fetchMapTown(townName), TownyMapMod::mergeTownSources)
-                .thenAccept(data -> {
+        fetchTownCard(earthMcApi.fetchTown(townName), townName).thenAccept(data -> {
             Minecraft c = Minecraft.getInstance();
             if (c == null) return;
             c.execute(() -> {
@@ -4246,18 +4235,28 @@ public class TownyMapMod implements ClientModInitializer {
      * placeholder's is not.
      */
     /**
-     * Folds the two town sources into the one card.
+     * The town card, from one source rather than two.
      *
-     * <p>A keyed answer wins on everything it knows and takes the two figures it does not -- the
-     * total roll and the claim count -- from /map/v1. With no key, or when the keyed request fails,
-     * the /map/v1 record is the card: real data, just missing what only a key unlocks. Null only
-     * when neither source answered, which leaves the caller's own fallback in place.
+     * <p>Asking both every time was waste dressed up as thoroughness. /v4 already carries the exact
+     * claim count in {@code stats.numTownBlocks}, and the total resident roll already arrives free in
+     * the squaremap markers we fetch for the claims layer anyway -- so for a reader with a key the
+     * second request bought one number we already had, at 7.6 KB a town, most of it a resident list
+     * read only for its length.
+     *
+     * <p>So: try the keyed endpoint, and fall back to /map/v1 only when it yields nothing. With no key
+     * that fallback is the whole story and costs nothing extra, because {@code apiAllowed()} refuses
+     * the keyed request before a socket is opened -- it returns null without touching the network. With
+     * a key it is the recovery path for a lookup that failed, which is strictly more than the card had
+     * before. Either way, one request in the normal case.
      */
-    private static TownPopupData mergeTownSources(TownPopupData keyed, net.townymap.model.MapTownData free) {
-        if (free != null) mapTownCache.put(townKey(free.name()), free);
-        if (keyed == null) return mapApiTownData(free);
-        if (free == null) return keyed;
-        return keyed.withMapApiTotals(free.residents(), free.claims());
+    private static java.util.concurrent.CompletableFuture<TownPopupData> fetchTownCard(
+            java.util.concurrent.CompletableFuture<TownPopupData> keyed, String townName) {
+        return keyed.thenCompose(data -> {
+            if (data != null || townName == null || townName.isBlank()) {
+                return java.util.concurrent.CompletableFuture.completedFuture(data);
+            }
+            return earthMcApi.fetchMapTown(townName).thenApply(TownyMapMod::mapApiTownData);
+        });
     }
 
     private static TownPopupData mapApiTownData(net.townymap.model.MapTownData m) {
@@ -4276,10 +4275,6 @@ public class TownyMapMod implements ClientModInitializer {
         if (apiClient == null || data == null) return data;
         // An archived popup is that date's; the live markers are today's, so leave it alone.
         if (isArchiveMode()) return data;
-        // /map/v1 first: its roll is EarthMC's own total and its claim count is authoritative. The
-        // squaremap markers stay as the fallback for a town whose record has not been fetched yet.
-        net.townymap.model.MapTownData m = mapTownCache.get(key);
-        if (m != null) return data.withMapApiTotals(m.residents(), m.claims());
         int total = apiClient.getTownResidents(key);
         return total > data.residentCount() ? data.withTotalResidentCount(total) : data;
     }

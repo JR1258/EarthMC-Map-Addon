@@ -65,10 +65,11 @@ public final class ApiKeyNoticeScreen extends Screen {
         rows.add(Row.bullet("Town borders, nation colours and town names"));
         rows.add(Row.bullet("Players, the EarthMC imagery layer and search"));
         rows.add(Row.bullet("Hovering a town for its mayor, nation and size"));
+        rows.add(Row.bullet("Town cards: mayor, board, gold, residents and claims"));
 
         rows.add(Row.gap("A KEY ALSO SHOWS", LABEL));
-        rows.add(Row.bullet("Bank balances, and open or for-sale status"));
-        rows.add(Row.bullet("Claim limits and active resident counts"));
+        rows.add(Row.bullet("Open and for-sale status, and claim limits"));
+        rows.add(Row.bullet("Active resident counts"));
         rows.add(Row.bullet("The overclaim and outsider-spawn overlays"));
         rows.add(Row.bullet("Player cards and nation pages"));
 
@@ -76,7 +77,7 @@ public final class ApiKeyNoticeScreen extends Screen {
         rows.add(Row.step("1", "Run ", "/api key create"));
         rows.add(Row.step("2", "Paste it into ", "Settings > Advanced > EarthMC API Key"));
 
-        rows.add(Row.gap("EarthMC requires a key on its API from 19 November.", DIM));
+        rows.add(Row.gap("EarthMC's API has required a key since 19 November.", DIM));
         rows.add(Row.of("The map side of this addon is unaffected either way.", DIM));
     }
 

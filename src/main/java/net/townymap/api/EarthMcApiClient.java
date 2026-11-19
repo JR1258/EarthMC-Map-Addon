@@ -37,6 +37,8 @@ public class EarthMcApiClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("TownyMapAddon");
     private static final String BASE = "https://api.earthmc.net/v4";
+    /** The keyless half of EarthMC's API. Same host, no key, limited to what the web map shows. */
+    private static final String MAP_BASE = "https://api.earthmc.net/map/v1";
 
     // ── API key ──────────────────────────────────────────────────────────────────────────────
     // EarthMC requires a key in the Authorization header on EVERY endpoint from 2026-11-19, and stops
@@ -90,9 +92,27 @@ public class EarthMcApiClient {
         }
     }
 
+    /**
+     * Whether EarthMC requires a key for this endpoint.
+     *
+     * <p>Since 2026-11-19 every /v4 endpoint refuses an unkeyed request, and /map/v1 is the
+     * documented exception. It lives on the same host, so the host check alone would gate it shut
+     * for precisely the users it was added to serve -- and would attach a key they do not have.
+     * Anything unparseable counts as keyed, so it is held back rather than sent bare.
+     */
+    private static boolean needsApiKey(String url) {
+        if (!isEarthMcApi(url)) return false;
+        try {
+            String path = URI.create(url).getPath();
+            return path == null || !path.startsWith("/map/");
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
     /** Whether a request may be sent at all. False means no socket is opened. */
     private boolean apiAllowed(String url) {
-        if (!isEarthMcApi(url)) return true;
+        if (!needsApiKey(url)) return true;
         if (apiKey.isEmpty()) {
             keyState = ApiKeyState.MISSING;
             if (missingKeyLogged.compareAndSet(false, true)) {
@@ -223,6 +243,72 @@ public class EarthMcApiClient {
                 return null;
             }
         }, executor);
+    }
+
+    /**
+     * The keyless town record: {@code GET /map/v1/town/{name}}.
+     *
+     * <p>Worth calling even with a key, because it costs nothing against the key's budget and carries
+     * the total resident roll and the authoritative claim count, neither of which /v4 gives. Returns
+     * null for an unknown town (EarthMC answers a plain 404) or any failure.
+     */
+    public CompletableFuture<net.townymap.model.MapTownData> fetchMapTown(String townName) {
+        if (townName == null || townName.isBlank()) return CompletableFuture.completedFuture(null);
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String encoded = java.net.URLEncoder.encode(townName, java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("+", "%20");
+                String body = get(MAP_BASE + "/town/" + encoded);
+                if (body == null) return null;
+                JsonElement root = JsonParser.parseString(body);
+                if (!root.isJsonObject()) return null;
+                return parseMapTown(root.getAsJsonObject());
+            } catch (Exception e) {
+                LOGGER.warn("[TownyMap] /map/v1 town lookup failed for {}: {}", townName, e.getMessage());
+                return null;
+            }
+        }, executor);
+    }
+
+    private net.townymap.model.MapTownData parseMapTown(JsonObject o) {
+        String name = str(o, "name", "");
+        if (name.isEmpty()) return null;
+        String mayor = str(o, "mayor", "");
+        String nation = "";
+        if (o.has("nation") && o.get("nation").isJsonObject()) {
+            nation = str(o.getAsJsonObject("nation"), "name", "");
+        }
+        String board = "";
+        String discord = "";
+        if (o.has("links") && o.get("links").isJsonObject()) {
+            JsonObject links = o.getAsJsonObject("links");
+            board = str(links, "board", "");
+            discord = str(links, "discord", "");
+        }
+        int residents = o.has("residents") && o.get("residents").isJsonArray()
+                ? o.getAsJsonArray("residents").size() : 0;
+        int claims = 0;
+        double balance = 0.0;
+        String founded = "";
+        if (o.has("stats") && o.get("stats").isJsonObject()) {
+            JsonObject stats = o.getAsJsonObject("stats");
+            claims = intOf(stats, "claims", 0);
+            balance = dblOf(stats, "balance", 0.0);
+            long ms = ts(stats, "founded");
+            if (ms > 0) {
+                founded = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
+                        .toLocalDate().format(DATE_FMT);
+            }
+        }
+        boolean pvp = false;
+        boolean isPublic = false;
+        if (o.has("status") && o.get("status").isJsonObject()) {
+            JsonObject status = o.getAsJsonObject("status");
+            pvp = bool(status, "pvp");
+            isPublic = bool(status, "public");
+        }
+        return new net.townymap.model.MapTownData(name, mayor, nation, board, discord,
+                residents, claims, balance, founded, pvp, isPublic);
     }
 
     /** /towns accepts up to 100 names per query. */
@@ -765,7 +851,7 @@ public class EarthMcApiClient {
         // which shows no inactive count rather than a wrong one.
         return new TownPopupData(name, nation, discord, board, mayor, chunks, founded, pvp,
                 isPublic, canOutsidersSpawn, isOverClaimed, isOpen, isForSale, hasNation, residents, balance,
-                residents, maxChunks, false);
+                residents, maxChunks, false, true);
     }
 
     /** On-demand for ONE focused nation: BOTH the active-resident count and the bonus-drop projection from
@@ -1148,7 +1234,7 @@ public class EarthMcApiClient {
 
     private String post(String url, String body) {
         if (!apiAllowed(url)) return null;
-        boolean earthMc = isEarthMcApi(url);
+        boolean earthMc = needsApiKey(url);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -1185,7 +1271,7 @@ public class EarthMcApiClient {
 
     private String get(String url) {
         if (!apiAllowed(url)) return null;
-        boolean earthMc = isEarthMcApi(url);
+        boolean earthMc = needsApiKey(url);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))

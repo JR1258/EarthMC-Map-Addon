@@ -117,7 +117,10 @@ public final class ApiKeyNoticeScreen extends Screen {
         int x = left + (w - totalW) / 2;
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Open settings"),
-                        b -> this.client.setScreen(new TownyMapConfigScreen(parent)))
+                        b -> {
+                            net.townymap.TownyMapMod.markApiKeyNoticeSeen();
+                            this.client.setScreen(new TownyMapConfigScreen(parent));
+                        })
                 .dimensions(x, btnY, openW, BTN_H).build());
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Continue without"),
                         b -> this.close())
@@ -150,9 +153,17 @@ public final class ApiKeyNoticeScreen extends Screen {
         }
     }
 
-    /** Esc dismisses it like the button; this is a notice, not a wall. */
+    /**
+     * Esc dismisses it like the button; this is a notice, not a wall.
+     *
+     * <p>Dismissing is also what marks it read. The flag is deliberately not written when the panel
+     * is posted: a notice cleared off the screen by a join that had not finished settling was never
+     * read, and writing the flag then spent the only showing there would ever be. Both ways out of
+     * this screen are a player's own action, so both are safe places to record it.
+     */
     @Override
     public void close() {
+        net.townymap.TownyMapMod.markApiKeyNoticeSeen();
         this.client.setScreen(parent);
     }
 

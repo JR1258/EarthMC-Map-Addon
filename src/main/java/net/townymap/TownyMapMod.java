@@ -171,15 +171,18 @@ public class TownyMapMod implements ClientModInitializer {
         ClientSendMessageEvents.COMMAND.register(TownyMapMod::onCommandSent);
         ClientReceiveMessageEvents.GAME.register(TownyMapMod::onGameMessage);
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK
-                .register(c -> net.townymap.integration.ShopWaypoints.tick());
+                .register(c -> { net.townymap.integration.ShopWaypoints.tick(); tickApiKeyCapture(); });
 
         LOGGER.info("TownyMap Addon ready; map refreshes are deferred until map/minimap rendering is active ({})", config.squaremapBaseUrl);
     }
 
     private static void onCommandSent(String command) {
-        if (apiClient == null || !isActiveOnCurrentServer()) return;
         String normalized = command.trim().toLowerCase(Locale.ROOT);
         if (normalized.startsWith("/")) normalized = normalized.substring(1);
+        // Ahead of the gate, for the same reason the capture hook in onGameMessage is: the window
+        // was opened by the player seconds ago and must not be swallowed by a server check.
+        if (normalized.startsWith("api key copy")) net.townymap.api.ApiKeyCapture.noteCopyRequested();
+        if (apiClient == null || !isActiveOnCurrentServer()) return;
         if (isTownClaimCommand(normalized)) {
             rememberPendingClaim();
         } else if (isTownUnclaimCommand(normalized)) {
@@ -4160,6 +4163,27 @@ public class TownyMapMod implements ClientModInitializer {
         sendFeedback("Reading chat for " + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
                 + "s. Run " + command + " and your key will be saved automatically.",
                 Formatting.YELLOW);
+    }
+
+    /**
+     * Offers {@code create} once a {@code copy} has come back empty.
+     *
+     * <p>The command is suggested, not run: clicking fills the chat box and leaves Enter to the
+     * player, because minting a key acts on their account and that is theirs to trigger.
+     */
+    private static void tickApiKeyCapture() {
+        if (!net.townymap.api.ApiKeyCapture.copyWentUnanswered()) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) return;
+        client.player.sendMessage(Text.literal("[TownyMap] ")
+                .formatted(Formatting.GOLD)
+                .append(Text.literal("No key came back, so it looks like you do not have one yet. ")
+                        .formatted(Formatting.YELLOW))
+                .append(Text.literal("[Click to run /api key create]")
+                        .styled(st -> st.withColor(Formatting.AQUA)
+                                .withUnderline(true)
+                                .withClickEvent(new net.minecraft.text.ClickEvent
+                                        .SuggestCommand("/api key create")))), false);
     }
 
     /**

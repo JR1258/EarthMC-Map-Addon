@@ -1,5 +1,10 @@
 package net.townymap.api;
 
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -8,8 +13,8 @@ import java.util.regex.Pattern;
  *
  * <p>Pasting a 171-character token into a text box is the step people get wrong: it arrives cut
  * short, or lands in the wrong field, or the box is left without submitting. Running
- * {@code /api key create} and having the addon take the key straight out of the reply skips all of
- * that.
+ * {@code /api key create} -- or {@code /api key copy} for a key that already exists -- and having
+ * the addon take the key straight out of the reply skips all of that.
  *
  * <p>Reading chat is not something a mod should do quietly, so this does none of it until the
  * player asks. The window is opened only from the settings button, behind a prompt that says what
@@ -52,20 +57,53 @@ public final class ApiKeyCapture {
     }
 
     /**
-     * The key this line carries, or null if it carries none.
+     * The key this message carries, or null if it carries none.
+     *
+     * <p>Deliberately looks past what is drawn on screen. EarthMC's {@code /api key copy} is named
+     * for the way it hands a key over: a line you click, with the key in the click event and
+     * something like "click to copy" in the text. A matcher that read only the visible string
+     * would find nothing there, so this walks every run of the message and reads the three
+     * carriers a key can actually reach a player through -- the text itself, a copy-to-clipboard
+     * value, and a shift-click insertion.
+     *
+     * <p>Run and suggested commands are skipped on purpose. They are things a player sends, not
+     * things a player copies, so no server puts a secret in one; reading them would only widen the
+     * chance of catching some other long token and closing the window on it.
      *
      * <p>The longest match wins, so a key printed beside an id or a URL fragment is still the one
      * taken. The value is returned, never logged.
      */
-    public static String findKey(String rawMessage) {
-        if (rawMessage == null || rawMessage.isEmpty()) return null;
-        String clean = LEGACY_COLOR.matcher(rawMessage).replaceAll("");
+    public static String findKey(Component message) {
+        if (message == null) return null;
+        // One slot rather than a field: the visitor is called inline and the result is read on the
+        // same thread before this returns, so there is nothing to share.
+        final String[] best = { null };
+        message.visit((style, text) -> {
+            best[0] = longer(best[0], findKey(text));
+            if (style != null) {
+                if (style.getClickEvent() instanceof ClickEvent.CopyToClipboard copy) {
+                    best[0] = longer(best[0], findKey(copy.value()));
+                }
+                best[0] = longer(best[0], findKey(style.getInsertion()));
+            }
+            return Optional.empty();   // never short-circuit; the longest match may be the last run
+        }, Style.EMPTY);
+        return best[0];
+    }
+
+    /** The longest key-shaped run in one string, or null. */
+    private static String findKey(String raw) {
+        if (raw == null || raw.isEmpty()) return null;
+        String clean = LEGACY_COLOR.matcher(raw).replaceAll("");
         Matcher m = KEY.matcher(clean);
         String best = null;
-        while (m.find()) {
-            String candidate = m.group();
-            if (best == null || candidate.length() > best.length()) best = candidate;
-        }
+        while (m.find()) best = longer(best, m.group());
         return best;
+    }
+
+    private static String longer(String a, String b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return b.length() > a.length() ? b : a;
     }
 }

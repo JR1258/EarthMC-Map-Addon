@@ -40,14 +40,54 @@ public final class ApiKeyCapture {
      */
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9_-]{48,}");
 
+    /**
+     * How long to wait after the command goes out before concluding EarthMC had nothing to hand
+     * back. Long enough to cover a round trip to a server that is thinking; short enough that the
+     * player has not yet started wondering what went wrong.
+     */
+    private static final long ANSWER_GRACE_MS = 6_000L;
+
     private static volatile long armedUntilMs = 0L;
+    private static volatile long copySentAtMs = 0L;
+    private static volatile boolean copyAnswered = false;
 
     private ApiKeyCapture() {}
 
     /** Opens the window. Called only from the settings prompt. */
-    public static void arm() { armedUntilMs = System.currentTimeMillis() + WINDOW_MS; }
+    public static void arm() {
+        armedUntilMs = System.currentTimeMillis() + WINDOW_MS;
+        copySentAtMs = 0L;
+        copyAnswered = false;
+    }
 
-    public static void cancel() { armedUntilMs = 0L; }
+    public static void cancel() { armedUntilMs = 0L; copySentAtMs = 0L; }
+
+    /** Starts the clock on a {@code /api key copy} the player has just sent. */
+    public static void noteCopyRequested() {
+        if (!armed()) return;
+        copySentAtMs = System.currentTimeMillis();
+        copyAnswered = false;
+    }
+
+    /**
+     * True exactly once, when a {@code copy} has gone long enough without producing a key.
+     *
+     * <p>This is how the addon learns something it cannot ask: whether the player has a key at all.
+     * Nothing it can read says so -- a config with no key covers a fresh install, a new machine and
+     * a key made for some other tool just as well as it covers a player who has never made one, and
+     * no keyless endpoint will answer the question. So it does not guess. It runs the command that
+     * is safe either way and lets the absence of a reply be the answer.
+     *
+     * <p>Deliberately a timeout rather than a match on what EarthMC said. The refusal's wording is
+     * not documented, could be translated, and could change; "no key arrived" cannot.
+     */
+    public static boolean copyWentUnanswered() {
+        if (copySentAtMs == 0L || copyAnswered) return false;
+        if (!armed()) { copySentAtMs = 0L; return false; }
+        if (System.currentTimeMillis() - copySentAtMs < ANSWER_GRACE_MS) return false;
+        copyAnswered = true;
+        return true;
+    }
 
     public static boolean armed() { return System.currentTimeMillis() < armedUntilMs; }
 

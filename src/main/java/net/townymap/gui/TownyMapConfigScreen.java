@@ -444,7 +444,7 @@ public class TownyMapConfigScreen extends Screen {
         // way. Typing a new one replaces it; the button below clears it.
         apiKeyField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("EarthMC API Key"));
         apiKeyField.setHint(Component.literal(cfg.earthMcApiKey.isEmpty()
-                ? "/api key create" : "set - type a new key to replace"));
+                ? KEY_COMMAND : "set - type a new key to replace"));
         // Generous on purpose. A real EarthMC key is a signed token, not a short id -- a live one
         // measured 171 characters -- and an EditBox does not say it truncated, it just silently
         // drops the tail. A key cut short is a key EarthMC refuses, with nothing on screen to
@@ -792,16 +792,22 @@ public class TownyMapConfigScreen extends Screen {
     }
 
     /**
-     * The command that fetches this player's key, which is not the same one twice.
+     * Always {@code copy}, never {@code create}, and not a guess.
      *
-     * <p>EarthMC splits the job: {@code create} mints a first key, {@code copy} hands back one that
-     * already exists, and {@code delete} is how you rotate. So the command to write out follows
-     * what is stored here -- and writing {@code copy} for someone who has a key is not just tidier,
-     * it keeps a second {@code create} away from an account that is already set up.
+     * <p>EarthMC splits the job three ways: {@code create} mints a first key, {@code copy} hands
+     * back one that already exists, {@code delete} is how you rotate. Writing the right one out
+     * would mean knowing whether this player has a key -- and nothing here knows that. An empty
+     * {@link TownyMapConfig#earthMcApiKey} covers a fresh install, a new machine, a cleared config
+     * and a key made for some other tool exactly as well as it covers someone who has never made
+     * one, and no keyless endpoint will answer the question either.
+     *
+     * <p>So it does not guess. {@code copy} is the one command that is safe under every answer: it
+     * cannot mint, cannot rotate, and cannot disturb an account that is already set up -- which
+     * matters all the more because what {@code create} does to an account that already has a key is
+     * undocumented and not in any public source. If no key comes back, that silence is the answer,
+     * and {@link TownyMapMod} offers {@code create} on the spot.
      */
-    private String keyCommand() {
-        return cfg.earthMcApiKey.isEmpty() ? "/api key create" : "/api key copy";
-    }
+    private static final String KEY_COMMAND = "/api key copy";
 
     private String apiKeyChatLabel() {
         return net.townymap.api.ApiKeyCapture.armed()
@@ -832,9 +838,10 @@ public class TownyMapConfigScreen extends Screen {
         net.minecraft.client.Minecraft mc = this.minecraft;
         if (mc == null) return;
         if (net.townymap.api.ApiKeyCapture.armed()) { net.townymap.api.ApiKeyCapture.cancel(); this.rebuildWidgets(); return; }
-        String command = keyCommand();
+        String command = KEY_COMMAND;
         String tail = cfg.earthMcApiKey.isEmpty()
-                ? "Made a key before? Change create to copy."
+                ? "If you have not made a key yet, EarthMC will say so and the addon will offer "
+                        + "you the command that makes one."
                 : "Whatever EarthMC hands back replaces the key stored now.";
         mc.gui.setScreen(new net.minecraft.client.gui.screens.ConfirmScreen(
                 ok -> {

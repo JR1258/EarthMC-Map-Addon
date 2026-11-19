@@ -74,8 +74,12 @@ public final class ApiKeyNoticeScreen extends Screen {
         rows.add(Row.bullet("Player cards and nation pages"));
 
         rows.add(Row.gap("TO ADD ONE", LABEL));
-        rows.add(Row.step("1", "Run ", "/api key create"));
-        rows.add(Row.step("2", "Paste it into ", "Settings > Advanced > EarthMC API Key"));
+        // copy first, create second. Which one a player needs depends on whether they already have
+        // a key, which nothing here can know -- but copy is harmless when they do not, and create
+        // is the one that would act on an account that is already set up.
+        rows.add(Row.step("1", "Run ", "/api key copy"));
+        rows.add(Row.step("2", "Never made one? Run ", "/api key create"));
+        rows.add(Row.step("3", "Paste it into ", "Settings > Advanced > EarthMC API Key"));
 
         rows.add(Row.gap("EarthMC's API has required a key since 19 November.", DIM));
         rows.add(Row.of("The map side of this addon is unaffected either way.", DIM));

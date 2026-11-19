@@ -453,8 +453,11 @@ public class TownyMapConfigScreen extends Screen {
         apiKeyField.setResponder(this::onApiKeyTyped);
         inputRow("EarthMC API Key", apiKeyField);
         action(apiKeyButtonLabel(), this::submitApiKey);
-        action(apiKeyCaptureLabel(), this::captureOrCopyApiKey);
-        if (!cfg.earthMcApiKey.isEmpty()) action("Clear API Key", this::clearApiKey);
+        action(apiKeyChatLabel(), this::startKeyCapture);
+        if (!cfg.earthMcApiKey.isEmpty()) {
+            action(apiKeyCopyLabel(), this::copyApiKey);
+            action("Clear API Key", this::clearApiKey);
+        }
 
         archiveField = new EditBox(this.font, ctrlX, 0, CTRL_W, 20, Component.literal("dd/mm/yyyy"));
         archiveField.setHint(Component.literal("dd/mm/yyyy"));
@@ -789,27 +792,31 @@ public class TownyMapConfigScreen extends Screen {
     }
 
     /**
-     * One button, two jobs.
+     * The command that fetches this player's key, which is not the same one twice.
      *
-     * <p>With no key stored the useful thing is to go and get one. With a key already stored there
-     * is nothing to fetch, so the useful thing is handing it back -- for a second instance, another
-     * launcher, or just to check what is actually saved, which the box deliberately never shows.
+     * <p>EarthMC splits the job: {@code create} mints a first key, {@code copy} hands back one that
+     * already exists, and {@code delete} is how you rotate. So the command to write out follows
+     * what is stored here -- and writing {@code copy} for someone who has a key is not just tidier,
+     * it keeps a second {@code create} away from an account that is already set up.
      */
-    private String apiKeyCaptureLabel() {
-        if (!cfg.earthMcApiKey.isEmpty()) {
-            return apiKeyCopied ? "API key copied to clipboard" : "Copy API Key";
-        }
+    private String keyCommand() {
+        return cfg.earthMcApiKey.isEmpty() ? "/api key create" : "/api key copy";
+    }
+
+    private String apiKeyChatLabel() {
         return net.townymap.api.ApiKeyCapture.armed()
                 ? "Reading chat... " + net.townymap.api.ApiKeyCapture.secondsLeft() + "s left"
                 : "Get Key From Chat";
     }
 
-    private boolean apiKeyCopied = false;
-
-    private void captureOrCopyApiKey() {
-        if (!cfg.earthMcApiKey.isEmpty()) { copyApiKey(); return; }
-        startKeyCapture();
+    /** Separate from the chat row because it answers a different question: not "what is my key" but
+     *  "give me the one I already have" -- for a second instance, another launcher, or just to see
+     *  what is actually saved, which the box deliberately never shows. */
+    private String apiKeyCopyLabel() {
+        return apiKeyCopied ? "API key copied to clipboard" : "Copy API Key";
     }
+
+    private boolean apiKeyCopied = false;
 
     /** The player's own key, onto their own clipboard, on their own click. It goes nowhere else. */
     private void copyApiKey() {
@@ -825,25 +832,30 @@ public class TownyMapConfigScreen extends Screen {
         net.minecraft.client.Minecraft mc = this.minecraft;
         if (mc == null) return;
         if (net.townymap.api.ApiKeyCapture.armed()) { net.townymap.api.ApiKeyCapture.cancel(); this.rebuildWidgets(); return; }
+        String command = keyCommand();
+        String tail = cfg.earthMcApiKey.isEmpty()
+                ? "Made a key before? Change create to copy."
+                : "Whatever EarthMC hands back replaces the key stored now.";
         mc.gui.setScreen(new net.minecraft.client.gui.screens.ConfirmScreen(
                 ok -> {
                     if (!ok) { mc.gui.setScreen(this); return; }
                     net.townymap.api.ApiKeyCapture.arm();
-                    TownyMapMod.announceKeyCaptureArmed();
+                    TownyMapMod.announceKeyCaptureArmed(command);
                     // Chat, with the command already written out -- all that is left is Enter. It is
-                    // not sent for them: /api key create mints a key on their account, which is
-                    // theirs to trigger, and a command typed into their own chat box is visible,
-                    // editable and abandonable in a way one sent on their behalf is not.
-                    mc.gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen(
-                            "/api key create", false));
+                    // not sent for them: these commands act on their account, which is theirs to
+                    // trigger, and a command typed into their own chat box is visible, editable and
+                    // abandonable in a way one sent on their behalf is not.
+                    mc.gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen(command, false));
                 },
                 Component.literal("Read chat to pick up your API key?"),
                 Component.literal("For the next "
                         + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000)
                         + " seconds this reads incoming chat, looking only for an EarthMC API key. "
-                        + "Chat will open with /api key create already written out -- press Enter to "
-                        + "send it -- and the key is saved the moment it appears. Nothing else is "
-                        + "read, kept or sent anywhere, and the window closes on its own."),
+                        + "Chat will open with " + command + " already written out -- press Enter "
+                        + "to send it -- and the key is saved the moment it appears, whether "
+                        + "EarthMC prints it or puts it behind a click-to-copy. " + tail
+                        + " Nothing else is read, kept or sent anywhere, and the window closes on "
+                        + "its own."),
                 Component.literal("Read chat for "
                         + (net.townymap.api.ApiKeyCapture.WINDOW_MS / 1000) + "s"),
                 Component.literal("Cancel")));
@@ -854,6 +866,7 @@ public class TownyMapConfigScreen extends Screen {
         if (!typed.isEmpty()) {
             cfg.earthMcApiKey = typed;
             cfg.save();
+            apiKeyCopied = false;       // the label referred to a key that is no longer the one stored
             apiKeyField.setValue("");   // do not leave it sitting on screen
         }
         TownyMapMod.applyApiKey();
@@ -863,6 +876,7 @@ public class TownyMapConfigScreen extends Screen {
     private void clearApiKey() {
         cfg.earthMcApiKey = "";
         cfg.save();
+        apiKeyCopied = false;
         apiKeyField.setValue("");
         TownyMapMod.applyApiKey();
         this.rebuildWidgets();

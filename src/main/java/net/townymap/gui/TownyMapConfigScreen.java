@@ -149,7 +149,17 @@ public class TownyMapConfigScreen extends Screen {
                     + "The same bind as Options > Controls; changing it in either place changes both."),
             Map.entry("View Archive",
                     "Type a date (dd/mm/yyyy) and press Enter to view the historical map from that day. "
-                    + "You can also do this from the world-map search bar, using . , or / (e.g. 17/4/2026)."));
+                    + "You can also do this from the world-map search bar, using . , or / (e.g. 17/4/2026)."),
+            Map.entry("EarthMC API Key",
+                    "Your key from EarthMC, which turns on the API-backed panels. Optional — borders, "
+                    + "town names, players, search and town cards all work without one. It is sent only to "
+                    + "api.earthmc.net, never written to the log, and survives Reset All."),
+            Map.entry("What A Key Adds",
+                    "Reopens the panel shown on first launch: what already works without a key, what a key "
+                    + "adds, and how to get one."),
+            Map.entry("Clear API Key",
+                    "Forgets the stored key. The map side is unaffected; only the API-backed panels go "
+                    + "quiet. Your key still exists on EarthMC — /api key copy hands it back."));
 
     /** Field-initialised defaults, used to drive the per-row Reset buttons. */
     private static final TownyMapConfig DEFAULTS = new TownyMapConfig();
@@ -439,7 +449,17 @@ public class TownyMapConfigScreen extends Screen {
                 () -> cfg.shopWaypointRange = DEFAULTS.shopWaypointRange);
         action("Reload Overlays", () -> net.townymap.integration.CustomOverlayManager.reload());
 
+        archiveField = new TextFieldWidget(this.textRenderer, ctrlX, 0, CTRL_W, 20, Text.literal("dd/mm/yyyy"));
+        archiveField.setPlaceholder(Text.literal("dd/mm/yyyy"));
+        archiveField.setMaxLength(14);
+        inputRow("View Archive", archiveField);
 
+        // A category rather than the tail of Advanced. The key is the one setting here that is not a
+        // preference: it is a credential, it has a state of its own that the rows report, and it is
+        // what someone arrives in settings looking for after reading the notice. Buried under the
+        // overlay and waypoint options it read like an afterthought, and was four screens of
+        // scrolling from the top.
+        section("API Key");
         // EarthMC requires a key on every endpoint from 2026-11-19, so this row is what turns the
         // API-backed panels on. The stored key is deliberately NOT loaded into the box: a settings
         // screen gets screenshotted and streamed, and a secret that is never drawn cannot leak that
@@ -465,11 +485,6 @@ public class TownyMapConfigScreen extends Screen {
             action(apiKeyCopyLabel(), this::copyApiKey);
             action("Clear API Key", this::clearApiKey);
         }
-
-        archiveField = new TextFieldWidget(this.textRenderer, ctrlX, 0, CTRL_W, 20, Text.literal("dd/mm/yyyy"));
-        archiveField.setPlaceholder(Text.literal("dd/mm/yyyy"));
-        archiveField.setMaxLength(14);
-        inputRow("View Archive", archiveField);
 
 
         this.addDrawableChild(

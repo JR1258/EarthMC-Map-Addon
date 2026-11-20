@@ -1678,7 +1678,13 @@ public class EarthMcApiClient {
                 JsonArray q = new JsonArray();
                 q.add(name);
                 body.add("query", q);
-                JsonElement root = JsonParser.parseString(postGated(url, body.toString()));
+                String json = postGated(url, body.toString());
+                // Null means the request was never sent -- no key, or a key already refused. Parsing
+                // it threw an NPE that the catch below dressed up as "Full lookup failed for Egypt:
+                // Cannot invoke String.length()", which reads like EarthMC broke rather than like a
+                // request this client correctly declined to make.
+                if (json == null) return null;
+                JsonElement root = JsonParser.parseString(json);
                 if (!root.isJsonArray() || root.getAsJsonArray().isEmpty()) return null;
                 JsonElement first = root.getAsJsonArray().get(0);
                 return first.isJsonObject() ? parser.apply(first.getAsJsonObject()) : null;

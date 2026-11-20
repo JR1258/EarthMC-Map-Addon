@@ -23,7 +23,8 @@ public class TownyMapConfig {
     public boolean playersEnabled = true;
     public boolean earthmcOnly = true;
     /**
-     * EarthMC API key, issued in game by {@code /api key create}.
+     * EarthMC API key, minted in game by {@code /api key create} and handed back afterwards by
+     * {@code /api key copy}.
      *
      * <p>A secret. It is never written to the log and never leaves api.earthmc.net -- the mod also
      * talks to map.earthmc.net, GitHub, the Wayback Machine, mc-heads and the alliance source, and

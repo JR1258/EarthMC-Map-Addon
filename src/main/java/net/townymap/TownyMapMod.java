@@ -4162,7 +4162,8 @@ public class TownyMapMod implements ClientModInitializer {
                     // The length, never the key. A paste that arrived cut short refuses exactly like a
                     // wrong key, and this one number tells the two apart without guesswork.
                     sendFeedback("EarthMC refused that API key (" + earthMcApi.apiKeyLength()
-                                    + " characters sent). Check it pasted whole, or run /api key create.",
+                                    + " characters sent). Check it pasted whole, or run /api key copy"
+                                    + " for the current one.",
                             ChatFormatting.RED);
                 } else {
                     sendFeedback("Could not reach EarthMC to check the key; it will be used anyway.",
@@ -4225,7 +4226,8 @@ public class TownyMapMod implements ClientModInitializer {
         if (client == null || client.player == null) return;
         client.player.sendSystemMessage(Component.literal("[TownyMap] ")
                 .withStyle(ChatFormatting.GOLD)
-                .append(Component.literal("No key came back, so it looks like you do not have one yet. ")
+                .append(Component.literal("Nothing back from EarthMC yet. If you have never made a key, "
+                                + "this is the command that makes one: ")
                         .withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal("[Click to run /api key create]")
                         .withStyle(st -> st.withColor(ChatFormatting.AQUA)

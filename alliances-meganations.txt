@@ -1,0 +1,562 @@
+EarthMC Alliances & Meganations
+Source: emcstats.bot.nu (the dataset earthmc-dynmap uses) · extracted 2026-07-27
+Maps to BreakTheBot Alliance_Model: Abbreviation=short_name, Type=type, Full name=name,
+Leader(s)=leaders[].name, Nations=nations[].name, Discord=discord, Flag=flag, Colour=color.
+==============================================================================
+
+##############################################################################
+#  TERRA NOSTRA  —  10 meganations, 9 alliances
+##############################################################################
+
+------ TERRA NOSTRA: MEGANATIONS (10) ------
+
+1. Abbreviation: AUS
+Type (Alliance or Meganation): Meganation
+Full name: Commonwealth of Australia
+Leader(s): LakeFish19, Panth_r
+Nations (2): Australia, Mexican-Republic
+
+Discord link (permanent link): https://discord.gg/sXXG29fCnx
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1504488280408854670/GoldenWattle_Flag_Green_Myrtle_NEW_2500px.webp?ex=6a072b66&is=6a05d9e6&hm=0b433b0d40fb82a7f1ef98a63d09663e662ff62fdf112e6e1ff47f1d056bc0ff&
+Colour (Hex code): #009E54 (fill) / #00D374 (outline)
+
+2. Abbreviation: BRZ
+Type (Alliance or Meganation): Meganation
+Full name: Empire of Brazil
+Leader(s): 3mesh
+Nations (3): Brazil, Panama, RioGrandeDoSul
+
+Discord link (permanent link): https://discord.gg/4UYQpBhKbk
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1504671574379331716/image.png?ex=6a07d61a&is=6a06849a&hm=e6c85cf6dcf5cb33fa89f316a9f43419082d3c3ac6ad6d6ae65bbdf682ba544a&
+Colour (Hex code): #009739 (fill) / #FEDD00 (outline)
+
+3. Abbreviation: Canada
+Type (Alliance or Meganation): Meganation
+Full name: Greater Canada
+Leader(s): CookiesByGeorge, KARN4, KuroOuji, S2F7, Travka1755, xstoicx
+Nations (7): Alberta, Canada, Hudson_Bay, James_Bay, NWT, Northern_Canada, Quebec
+
+Discord link (permanent link): https://discord.gg/c7AcUNnq7Q
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1525391380812140545/iu_.png
+Colour (Hex code): #FF0000 (fill) / #FFFFFF (outline)
+
+4. Abbreviation: GER
+Type (Alliance or Meganation): Meganation
+Full name: Kingdom of Germany
+Leader(s): thebestLung
+Nations (4): Germany, Greece, Holland, Hungary
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): —
+
+5. Abbreviation: Japan
+Type (Alliance or Meganation): Meganation
+Full name: Japan
+Leader(s): 173BIGMAC
+Nations (7): Hokkaido, Japan, Kingdom_Of_Spain, Lanfang, Sahul, Taiwan, WA
+
+Discord link (permanent link): https://discord.gg/6Nvtdf3hXC
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1510050624878940160/Flag-Japan.png
+Colour (Hex code): #FFFAFA (fill) / #FF1493 (outline)
+
+6. Abbreviation: LFF
+Type (Alliance or Meganation): Meganation
+Full name: Langfang Federation
+Leader(s): Cheun_lau, flurrry
+Nations (2): Lanfang, Malaysia
+
+Discord link (permanent link): https://discord.gg/uwW3uZjBw4
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1512754429177237574/image.png
+Colour (Hex code): #FFFFFF (fill) / #46729D (outline)
+
+7. Abbreviation: Nubia
+Type (Alliance or Meganation): Meganation
+Full name: Fourth Nubian Empire
+Leader(s): twomoo1119
+Nations (5): Aksum, Arabia, Nubia, Somali, Sumer
+
+Discord link (permanent link): https://discord.gg/vQjkSMYGb3
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1510051183019032606/Nubian_Flag.png
+Colour (Hex code): #7F3300
+
+8. Abbreviation: NZL
+Type (Alliance or Meganation): Meganation
+Full name: New Zealand
+Leader(s): Dools2
+Nations (2): NZ, New_Zealand
+
+Discord link (permanent link): https://discord.gg/eYbxhumGpq
+Flag (image/link): —
+Colour (Hex code): —
+
+9. Abbreviation: Persia
+Type (Alliance or Meganation): Meganation
+Full name: Kingdom of Persia
+Leader(s): GameSquire76, nachoman267
+Nations (2): Iran, Persia
+
+Discord link (permanent link): https://discord.gg/sfctnczcch
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1526370890655469699/image.png?ex=6a56c72a&is=6a5575aa&hm=a494c57d83b16eaab08e6e0812224a0f614a18c79e7cec7661be913465e34d16&animated=true
+Colour (Hex code): #E0C23A
+
+10. Abbreviation: PHL
+Type (Alliance or Meganation): Meganation
+Full name: Federal Republic of the Philippines
+Leader(s): Nepotist, SingaporeAir
+Nations (2): Micronesia, Philippines
+
+Discord link (permanent link): https://discord.gg/zxe4fbWWSF
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1513813645442813992/Flag_of_the_Philippines.png
+Colour (Hex code): #DE7A3C
+
+------ TERRA NOSTRA: ALLIANCES (9) ------
+
+11. Abbreviation: A.U
+Type (Alliance or Meganation): Alliance
+Full name: African Union
+Leader(s): —
+Nations (12): Aba, Congo, Egypt, Ethiopia, Lake_Victoria, Madagascar, Mali, Mauretania, Nubia, RSA, SWA, Somali
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1495666707568656404/Flag_of_the_African_Union.svg.png
+Colour (Hex code): #007F46 (fill) / #00FF21 (outline)
+
+12. Abbreviation: ASEAN
+Type (Alliance or Meganation): Alliance
+Full name: Association of Southeast Asian Nations
+Leader(s): —
+Nations (6): KHMER, Lanfang, Malaysia, Philippines, Sahul, Thailand
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1508688008717668393/1920px-Flag_of_ASEAN.svg.png?ex=6a1672b3&is=6a152133&hm=42d56125d704a57f7e546ef16d5913b8c3a3fa9e32539fe8cdca56330087863a&
+Colour (Hex code): #2534A1 (fill) / #D74041 (outline)
+
+13. Abbreviation: E.U
+Type (Alliance or Meganation): Alliance
+Full name: European Union
+Leader(s): ChrisNoSignal, Dres1, Nf_miracle, Tendonkeys, Vellange, thebestLung
+Nations (13): Bulgaria, Georgia, Germany, Greece, Hungary, Kingdom_Of_Spain, Nicaea, Scotland, Sicily, Soviet_Union, Spain, Sweden, United_Kingdom
+
+Discord link (permanent link): https://discord.gg/Nvm6VTaRGy
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1497512472121315408/Flag_of_Europe.svg.png
+Colour (Hex code): #002F9A
+
+14. Abbreviation: MEL
+Type (Alliance or Meganation): Alliance
+Full name: Middle Eastern League
+Leader(s): 36hoi, FatihAr, Hill24671, KauPasha, Omariuss, Ravocy_, nachoman267
+Nations (7): Arabia, Bulgaria, Chechnya, Georgia, Persia, Turkiye, Umayyad
+
+Discord link (permanent link): https://discord.gg/FuM9NXVMXY
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1510426399662543008/Muslim_League_Flag.jpg
+Colour (Hex code): #006233 (fill) / #FFFFFF (outline)
+
+15. Abbreviation: PAL
+Type (Alliance or Meganation): Alliance
+Full name: Pan Asian League
+Leader(s): 32Basil
+Nations (8): Angara, Bokkai, FE, Kamchatka, Karafuto, Korea, Narmada, Sakha_Republic
+
+Discord link (permanent link): https://discord.gg/HNTue9uWhN
+Flag (image/link): —
+Colour (Hex code): #82AE46 (fill) / #328131 (outline)
+
+16. Abbreviation: U.N
+Type (Alliance or Meganation): Alliance
+Full name: United Nations
+Leader(s): 173BIGMAC, Dres1, Panth_r, thebestLung
+Nations (27): Amazon, Australia, Bulgaria, Germany, Greenland, Hokkaido, Hudson_Bay, Hungary, Iceland, Japan, Kingdom_Of_Spain, Lake_Victoria, Lanfang, Malaysia, Mexican-Republic, Nicaea, Papua_New_Guinea, Sahul, Sicily, Spain, Sweden, Taiwan, Timor, USA, United_Kingdom, United_States, WA
+
+Discord link (permanent link): https://discord.gg/ErYZ3mhjFR
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1511062703849078885/IMG_7064.png?ex=6a1f164e&is=6a1dc4ce&hm=2e1f92ee532e3af7be8cb74ccca953b0dbe21226e8702ba66226ac93b1ec0730&
+Colour (Hex code): —
+
+17. Abbreviation: ULAN
+Type (Alliance or Meganation): Alliance
+Full name: Union of Latin American Nations
+Leader(s): 21eea, 3mesh, Bugndad2019, Fedrer, Gecko1, Matiasole, MegaPotato_
+Nations (8): Argentina, Brazil, Cuba, Galapagos, Mexico, Panama, Peru, RioGrandeDoSul
+
+Discord link (permanent link): https://discord.gg/JUGnNGCS5c
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1527537231802273822/IMG_7490.webp?ex=6a5b0568&is=6a59b3e8&hm=5a11929d9824ec618eaebb007dbc7d7226cba546f5c6d23d8d949ec07875fd87
+Colour (Hex code): #0000A3 (fill) / #FFFFFF (outline)
+
+18. Abbreviation: UPS
+Type (Alliance or Meganation): Alliance
+Full name: Union of Pacific States
+Leader(s): 12BarBruise, DeliOyuncu7875, Gramassis, Panth_r, kobiKraft
+Nations (10): Australia, Fiji, Mexican-Republic, Micronesia, NZ, NewCaledonia, New_Zealand, Oceania, Papua_New_Guinea, Philippines
+
+Discord link (permanent link): https://discord.gg/6tye5G6mV7
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1499636020738527364/IMG_8149.png
+Colour (Hex code): #6CACE4 (fill) / #FFFFFF (outline)
+
+19. Abbreviation: WCw
+Type (Alliance or Meganation): Alliance
+Full name: Western Commonwealth
+Leader(s): 3mesh, ChrisNoSignal, Konstrukt, KrazyCidGaming, MakRouss, Schober_Gaming, Straw_inturtles, wooshing
+Nations (9): Anchorage, Brazil, Denali, Netherlands, Panama, RioGrandeDoSul, Soviet_Union, Sweden, United_States
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1499451430862585856/westerncommonwealth.webp
+Colour (Hex code): #82C3EC
+
+
+##############################################################################
+#  AURORA  —  20 meganations, 15 alliances
+##############################################################################
+
+------ AURORA: MEGANATIONS (20) ------
+
+1. Abbreviation: Abyssinia
+Type (Alliance or Meganation): Meganation
+Full name: Abyssinia
+Leader(s): —
+Nations (3): DRC, Ethiopia, Turkana
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): #FFFFFF (fill) / #000000 (outline)
+
+2. Abbreviation: Aland
+Type (Alliance or Meganation): Meganation
+Full name: Aland
+Leader(s): Karabines
+Nations (3): Aland, Muscovy, Russia
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1361243315261014086/image.png?ex=693922a1&is=6937d121&hm=92fe5c43c2ad10073264da34c30053e06a5bbcb7f9f243354c52d7264e080a0e&
+Colour (Hex code): #FFD400 (fill) / #DB060D (outline)
+
+3. Abbreviation: Antarctic
+Type (Alliance or Meganation): Meganation
+Full name: Antarctic Union
+Leader(s): —
+Nations (6): Amery, Antarctica, Kemp, Palmer_Land, South_Pole, Vinson
+
+Discord link (permanent link): https://discord.gg/qSbCjkKWwX
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1120014059010527233/au_flag.png
+Colour (Hex code): #1C1973
+
+4. Abbreviation: Baranof
+Type (Alliance or Meganation): Meganation
+Full name: Empire of Baranof
+Leader(s): thebestLung
+Nations (5): Alberta, Baffin_Island, Cambodia, Georgia, United_States
+
+Discord link (permanent link): https://discord.gg/GCGjhnfSAW
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1467956486830428275/sitka.png
+Colour (Hex code): #3B6A50 (fill) / #EA3323 (outline)
+
+5. Abbreviation: Cascadia
+Type (Alliance or Meganation): Meganation
+Full name: Republic of Cascadia
+Leader(s): MasterEWild
+Nations (5): Arizona, California, Cascadia, Manicouagan, Vermont
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): #0A16C1 (fill) / #FFFFFF (outline)
+
+6. Abbreviation: CNM
+Type (Alliance or Meganation): Meganation
+Full name: Chinese Nations Meganation
+Leader(s): ItzYunwu, Mandagora, Nanamipolaris, Su_Su_a, UpwindSoda, WinterBelieve
+Nations (20): 2.1Incorrect, CSR, DaLi, Dian, EastAsia, Eastern_China, Hainan, Huaxia, Huihu, Liao, Ming, North_Korea, Qin, Shang, Shu, Song, Tang, Wei, Xin, Yue
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): #FFFFFF
+
+7. Abbreviation: FSE
+Type (Alliance or Meganation): Meganation — sub-alliance of Nubia
+Full name: First Sulawesian Empire
+Leader(s): TendonkeysOwOr
+Nations (13): 2.1NotReel, AIR, Baffin_Island, Cambodia, Inca_Empire, Kiribati, Mataram, Mentawai, Riau, Sulawesi, Sumatra, Taurova, Wrangel
+
+Discord link (permanent link): https://discord.gg/rmmEDRJeTR
+Flag (image/link): —
+Colour (Hex code): —
+
+8. Abbreviation: Japan
+Type (Alliance or Meganation): Meganation
+Full name: Empire of Japan
+Leader(s): 173BIGMAC
+Nations (25): Ainu, Dzungar, East_Khazar, Ezo_Republic, Hei, Hokkaido, Houten, Izumo, Japan, Jin, Karafuto, Karelia, Komoran, Korea, Manchuria, Mappi, Melanesia, Mongolia, New_Zealand, Oghuz, Rouran, Ryukyu, Siberia, Yamato, tosa
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1364991912930709604/Japan_Flag.png
+Colour (Hex code): #F1C469 (fill) / #882122 (outline)
+
+9. Abbreviation: Netherlands
+Type (Alliance or Meganation): Meganation
+Full name: United Kingdoms of the Netherlands
+Leader(s): DelTheSlime, MattieMirakel
+Nations (2): Germany, Netherlands
+
+Discord link (permanent link): https://discord.gg/GF5mPDgkJF
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1360348882831409232/Netherlands.webp
+Colour (Hex code): #FFA500
+
+10. Abbreviation: Nubia
+Type (Alliance or Meganation): Meganation
+Full name: Third Nubian Empire
+Leader(s): MrPickle26
+Nations (3): AL, Eko, Nubia
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1447670160319189032/nubianflag.png
+Colour (Hex code): #FF69B4
+
+11. Abbreviation: Oahu
+Type (Alliance or Meganation): Meganation
+Full name: Oahu Empire
+Leader(s): justromann
+Nations (4): Fiji, Maui, Oahu, Tahiti
+
+Discord link (permanent link): https://discord.gg/XAX8BSxTBT
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1455771406297075745/oahuu.png
+Colour (Hex code): #23B03F (fill) / #2F823F (outline)
+
+12. Abbreviation: Oates
+Type (Alliance or Meganation): Meganation
+Full name: Land of Oates
+Leader(s): HenrySP9506
+Nations (9): Alberta, Arctic_Isles, BeringStrait, Hudson, Manitoba, NewBrunswick, New_Zealand, Oates, Tannu_Tuva
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1416579378992779365/Untitled_Artwork.png
+Colour (Hex code): #00008B
+
+13. Abbreviation: Persia
+Type (Alliance or Meganation): Meganation — sub-alliance of Nubia
+Full name: Persian Empire
+Leader(s): 36hoi
+Nations (5): Israel, Khroma, Kuwait, Persia, Suomi
+
+Discord link (permanent link): https://discord.gg/Bay5Hy7vrX
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1478630221031673969/IMG_6435.png
+Colour (Hex code): #640D14 (fill) / #000000 (outline)
+
+14. Abbreviation: Pilbara
+Type (Alliance or Meganation): Meganation
+Full name: Pilbaran Empire
+Leader(s): kobiKraft
+Nations (8): Fennoskandia, Getz, Gibson_Desert, Majapahit, Namibia, Newfoundland, Pilbara, West_Australia
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1427162620078850120/image.png
+Colour (Hex code): #152CCC (fill) / #0CF326 (outline)
+
+15. Abbreviation: PNG
+Type (Alliance or Meganation): Meganation
+Full name: Papua New Guinea
+Leader(s): AlexIsBased, EnderDucky17
+Nations (6): AIR, Inuit_Nunangat, Kiribati, Komoran, Marshall_Islands, Papua_New_Guinea
+
+Discord link (permanent link): https://discord.gg/xegXEBEGgu
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1371719101868937226/image.png
+Colour (Hex code): #0000FF (fill) / #FF0000 (outline)
+
+16. Abbreviation: Polaris
+Type (Alliance or Meganation): Meganation
+Full name: Polaris Confederation
+Leader(s): Capo_Co, General_Hvid, Noodlebowl07, StJohnOfPatmos, StarkeOG, dutifulflame, maxxiiz, spacewonder6
+Nations (4): Angara, Aurelia, Evenkiysky, Sakha
+
+Discord link (permanent link): https://discord.gg/HPFPmMKx5B
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1428635417510678558/839CA5E0-8074-480B-AF5B-07660398BB1F.png
+Colour (Hex code): #6F00FF (fill) / #FFFF00 (outline)
+
+17. Abbreviation: Texas
+Type (Alliance or Meganation): Meganation
+Full name: Republic of Texas
+Leader(s): sometexan
+Nations (11): 2.1TooFar, Coahuila, Gulf_of_Mexico, Illinois, Midwest, Norcal, Rio_Grande, Saskatchewan, Sinaloa, Texas, Yucatan
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): #00205B (fill) / #BF0D3E (outline)
+
+18. Abbreviation: USA
+Type (Alliance or Meganation): Meganation
+Full name: USA Empire
+Leader(s): Meshmallow
+Nations (7): CCCP, Nepal, Queensland, Siam, Terra_Australis, Thailand, Trumpland
+
+Discord link (permanent link): https://discord.gg/9R9R8QTzdg
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1470604268099604490/image.png
+Colour (Hex code): #8F00FF
+
+19. Abbreviation: Venice
+Type (Alliance or Meganation): Meganation
+Full name: The Most Serene Republic of Venice
+Leader(s): CorruptedGreed
+Nations (3): Sahara, Spain, Venice
+
+Discord link (permanent link): https://discord.gg/AhQekR9dkw
+Flag (image/link): —
+Colour (Hex code): #9500FF
+
+20. Abbreviation: Xeta
+Type (Alliance or Meganation): Meganation — sub-alliance of Polaris
+Full name: Xeta Empire
+Leader(s): spacewonder6
+Nations (2): RSFSR, Xeta
+
+Discord link (permanent link): https://discord.gg/jvRQ7UG
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1433990413987086336/IMG_5049.png
+Colour (Hex code): #000080 (fill) / #0000FF (outline)
+
+------ AURORA: ALLIANCES (15) ------
+
+21. Abbreviation: AE2
+Type (Alliance or Meganation): Alliance — sub-alliance of Nubia
+Full name: The Second Arctic Empire
+Leader(s): ImLayZ
+Nations (5): Arctic, Avannaata, S.Canada, Suomi, Umba
+
+Discord link (permanent link): https://discord.gg/RPYvvzECzb
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1329284140758990848/arcticflag.png
+Colour (Hex code): #00B0BD (fill) / #0039A6 (outline)
+
+22. Abbreviation: ASEAN
+Type (Alliance or Meganation): Alliance
+Full name: Association of Southeast Asian Nations
+Leader(s): LogolWaffle, Meshmallow
+Nations (27): 2.1NotReel, AIR, Australia, Bangladesh, Borneo, Burma, CCCP, Down_Under, Hainan, Inca_Empire, Indochina, Inuit_Nunangat, Kiribati, Madeira, Marshall_Islands, Mataram, Melville_Islands, Mentawai, Nepal, Papua_New_Guinea, Pilipinas, Riau, Siam, Sulawesi, Thailand, Trumpland, Victoria
+
+Discord link (permanent link): https://discord.gg/nXRDsJUXkw
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1440229581456932925/Seal_of_ASEAN.png
+Colour (Hex code): #0042A6 (fill) / #F9E300 (outline)
+
+23. Abbreviation: BLS
+Type (Alliance or Meganation): Alliance — sub-alliance of Nubia
+Full name: Bharat League of States
+Leader(s): MrPickle26
+Nations (9): Bactria, Bangladesh, Burma, Laos, Mauryan_Empire, Pakistan, Sri_Lanka, Uzbekistan, Xinjiang
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1311524415414210681/Nqe5K9T.png
+Colour (Hex code): #B75721 (fill) / #214B4A (outline)
+
+24. Abbreviation: EAA
+Type (Alliance or Meganation): Alliance
+Full name: East Asia Alliance
+Leader(s): 173BIGMAC
+Nations (46): 2.1Incorrect, Ainu, Bay_Of_Plenty, CSR, DaLi, Dian, Dzungar, EastAsia, East_Khazar, Eastern_China, Ezo_Republic, Hainan, Hei, Hokkaido, Houten, Huaxia, Huihu, Izumo, Japan, Jin, Karafuto, Karelia, Komoran, Korea, Liao, Manchuria, Mappi, Melanesia, Ming, Mongolia, New_Zealand, North_Korea, Oghuz, Qin, Qing, Rouran, Ryukyu, Shang, Shu, Siberia, Song, Tang, Wei, Xin, Yamato, tosa
+
+Discord link (permanent link): https://discord.gg/rJphEt4asD
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1431431123937792090/eaa-logo-design-inspiration-for-a-unique-identity-modern-elegance-and-creative-design-watermark-your-success-with-the-striking-this-logo-vector.png
+Colour (Hex code): #FFFFFF (fill) / #FF0000 (outline)
+
+25. Abbreviation: Ecumene
+Type (Alliance or Meganation): Alliance
+Full name: The Ecumene Pact
+Leader(s): 32Oln, Sepraf
+Nations (9): 2.1NotInPersia, Greece, Iran, Kazakhstan, Kuwait, Pilbara, RSA, Sahara, Spain
+
+Discord link (permanent link): https://discord.gg/q7KDqKncFt
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1406382713610571878/image.png
+Colour (Hex code): #6C00A6 (fill) / #FF0000 (outline)
+
+26. Abbreviation: Entente
+Type (Alliance or Meganation): Alliance
+Full name: The Entente
+Leader(s): —
+Nations (40): 2.1NotReel, AIR, Arctic, Asuka, Australia, Avannaata, Bactria, Bangladesh, Borneo, Burma, Down_Under, Egypt, Eko, Great_Bulgaria, Inca_Empire, Inuit_Nunangat, Israel, Khroma, Kuwait, Laos, Marshall_Islands, Mataram, Mauryan_Empire, Mentawai, Nubia, Pakistan, Papua_New_Guinea, Persia, Riau, S.Canada, Somalia, Sri_Lanka, Sulawesi, Suomi, Taurova, Thailand, Umba, Uzbekistan, Xeta, Xinjiang
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1385566881846394943/entente.png
+Colour (Hex code): #000000 (fill) / #EDC001 (outline)
+
+27. Abbreviation: Ezo
+Type (Alliance or Meganation): Alliance
+Full name: Ezo Republic
+Leader(s): Aratsuki_UwU, Gafia312, yossie
+Nations (4): Ezo_Republic, Karafuto, Ryukyu, Siberia
+
+Discord link (permanent link): https://discord.gg/5kPPY53yFv
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1380902437975621744/image.png
+Colour (Hex code): #FFFFFF (fill) / #2F3091 (outline)
+
+28. Abbreviation: MEP
+Type (Alliance or Meganation): Alliance
+Full name: Middle Eastern Pact
+Leader(s): 36hoi, LookingDizzy, MrPickle26, TomasBlud
+Nations (4): Babylon, Nubia, Persia, Uzbekistan
+
+Discord link (permanent link): https://discord.gg/ezcxpKwPWc
+Flag (image/link): —
+Colour (Hex code): #FFD700
+
+29. Abbreviation: NATO
+Type (Alliance or Meganation): Alliance
+Full name: North American Treaty Organisation
+Leader(s): Hashbrown_922
+Nations (17): 2.1TooFar, Canada, Coahuila, Georgia, Gulf_of_Mexico, Illinois, Midwest, NWT, Norcal, Rio_Grande, Saskatchewan, Sinaloa, Subarctic, Texas, Vermont_Republic, Vinland, Yucatan
+
+Discord link (permanent link): https://discord.gg/y5ysg9tqpx
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1438293392361787543/Flag_of_NATO.png
+Colour (Hex code): #000080 (fill) / #0000FF (outline)
+
+30. Abbreviation: NPE
+Type (Alliance or Meganation): Alliance
+Full name: North Alaskan/Pacific Empire
+Leader(s): 8set
+Nations (2): North_Alaska, Rocky_Mountains
+
+Discord link (permanent link): https://discord.gg/wJrEnTrvq4
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1432574328632770681/image_52.png
+Colour (Hex code): #4C5E85 (fill) / #FFFFFF (outline)
+
+31. Abbreviation: RSA
+Type (Alliance or Meganation): Alliance — sub-alliance of Pilbara
+Full name: Realm of South Africa
+Leader(s): —
+Nations (2): Marion_Islands, RSA
+
+Discord link (permanent link): https://discord.gg/mkqPNGvVGu
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1357829831282266233/RSAFlag.webp
+Colour (Hex code): #FFB612 (fill) / #007A4D (outline)
+
+32. Abbreviation: SRA
+Type (Alliance or Meganation): Alliance
+Full name: Silk Road Alliance
+Leader(s): Nicky_Who
+Nations (12): Aland, Austria, Avanti, Germany, Greece, Laccadive_Sea, Maluku, Mauryan_Empire, Norway, Saint-Domingue, Tang, south_khazar
+
+Discord link (permanent link): —
+Flag (image/link): —
+Colour (Hex code): #FFFF00 (fill) / #FFFFFF (outline)
+
+33. Abbreviation: TCW
+Type (Alliance or Meganation): Alliance
+Full name: The Commonwealth
+Leader(s): giannakycc, kobiKraft
+Nations (17): AL, Amery, Antarctica, Fennoskandia, Getz, Kemp, Majapahit, Marion_Islands, Namibia, Newfoundland, Palmer_Land, Pilbara, RSA, South_Pole, Tanzania, Vinson, West_Australia
+
+Discord link (permanent link): https://discord.gg/SRZQBuVAQn
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1361532412500119733/SouthernCommonwealth.png
+Colour (Hex code): #0B1979
+
+34. Abbreviation: UPS
+Type (Alliance or Meganation): Alliance — sub-alliance of Nubia
+Full name: United Pacific States
+Leader(s): MrPickle26
+Nations (4): AIR, Asuka, Borneo, Sulawesi
+
+Discord link (permanent link): https://discord.gg/jPDRBYGCUH
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1407479025571725392/image.png
+Colour (Hex code): —
+
+35. Abbreviation: Uzbekistan
+Type (Alliance or Meganation): Alliance — sub-alliance of Nubia
+Full name: Federation of Uzbekistan
+Leader(s): 36hoi
+Nations (7): Bactria, Great_Bulgaria, Pakistan, Persia, Taurova, Uzbekistan, Xinjiang
+
+Discord link (permanent link): —
+Flag (image/link): https://cdn.discordapp.com/attachments/966372674236481606/1338655605577089135/1280px-Flag_of_Uzbekistan.png
+Colour (Hex code): #0099B5 (fill) / #CE1126 (outline)

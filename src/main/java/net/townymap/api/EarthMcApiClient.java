@@ -117,8 +117,9 @@ public class EarthMcApiClient {
             keyState = ApiKeyState.MISSING;
             if (missingKeyLogged.compareAndSet(false, true)) {
                 LOGGER.warn("[TownyMap] No EarthMC API key set, so API lookups are off. Run /api key"
-                        + " create in game, then put the key in Settings -> EarthMC API Key. The map"
-                        + " itself -- borders, town names, players -- needs no key and is unaffected.");
+                        + " copy in game -- or /api key create if you have never made one -- then put"
+                        + " the key in Settings -> EarthMC API Key. The map itself -- borders, town"
+                        + " names, players -- needs no key and is unaffected.");
             }
             return false;
         }
@@ -138,7 +139,7 @@ public class EarthMcApiClient {
         rejectedCheckedAt = System.currentTimeMillis();
         if (rejectedKeyLogged.compareAndSet(false, true)) {
             LOGGER.warn("[TownyMap] EarthMC refused the API key (HTTP {}). Check it in Settings ->"
-                    + " EarthMC API Key, or run /api key create in game for a fresh one.", status);
+                    + " EarthMC API Key, or run /api key copy in game to pick up the current one.", status);
         }
     }
 

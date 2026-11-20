@@ -507,6 +507,47 @@ public final class DetailPages {
         return out;
     }
 
+    /**
+     * The same panel from the keyless record, for when {@code /v4} will not answer.
+     *
+     * <p>Without a key the expanded panel used to say "Nothing found" for a town whose popup --
+     * still on screen behind it -- was happily showing mayor, board, bank and claims. The popup had
+     * a fallback to {@code /map/v1/town} and this path did not, so the same town was both known and
+     * missing depending on which way you opened it.
+     *
+     * <p>What /map/v1 does not carry is left out rather than drawn blank: no resident roll, no
+     * trusted or outlaw lists, no spawn, no claim limit, no founder, and no flags beyond pvp and
+     * public. A reader gets what EarthMC will give away for free and is not told the rest is empty.
+     */
+    public static Page town(net.townymap.model.MapTownData m) {
+        List<DetailScreen.Block> b = new ArrayList<>();
+        boolean hasNation = m.nation() != null && !m.nation().isBlank();
+        boolean hasMayor = m.mayor() != null && !m.mayor().isBlank() && !m.mayor().equals("?");
+
+        b.add(new Cols(List.of(
+                new Col("Mayor", hasMayor ? m.mayor() : "—",
+                        hasMayor ? new Ref(Kind.PLAYER, m.mayor()) : null),
+                new Col("Founded", m.founded() == null || m.founded().isBlank() ? "—" : m.founded()),
+                new Col("Nation", hasNation ? m.nation() : "—",
+                        hasNation ? new Ref(Kind.NATION, m.nation()) : null))));
+        addAllianceBlocks(b, hasNation ? m.nation() : "");
+
+        if (m.board() != null && !m.board().isBlank()) b.add(new DetailScreen.Wide("Board", m.board()));
+        b.add(new Rule());
+
+        // No claim limit here, unlike the keyed page: /map/v1 gives the count and not the maximum,
+        // and "12 / ?" reads like a failure rather than a thing EarthMC withholds.
+        b.add(new Cols(List.of(
+                new Col("Size", m.claims() + " claims"),
+                new Col("Bank", money(m.balance())),
+                new Col("Residents", String.valueOf(m.residents())))));
+        b.add(new Rule());
+        b.add(chips("public", m.isPublic(), "pvp", m.pvp()));
+
+        return new Page(Kind.TOWN, m.name(), hasNation ? m.nation() : "no nation", b,
+                DiscordUrl.normalize(m.discord()), null);
+    }
+
     public static Page town(TownFullData t) {
         List<DetailScreen.Block> b = new ArrayList<>();
 

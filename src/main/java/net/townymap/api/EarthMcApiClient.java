@@ -1698,6 +1698,10 @@ public class EarthMcApiClient {
                 q.add(townName);
                 body.add("query", q);
                 String json = postGated(BASE + "/towns", body.toString());
+                // Null means the request was never sent -- no key, or the key is known-refused.
+                // Parsing it threw, and the catch below reported that as "Failed to fetch", which
+                // is a warning per keyless lookup for a request that was correctly held back.
+                if (json == null) return null;
                 JsonElement root = JsonParser.parseString(json);
                 if (!root.isJsonArray() || root.getAsJsonArray().isEmpty()) return null;
                 JsonElement first = root.getAsJsonArray().get(0);

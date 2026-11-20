@@ -698,6 +698,50 @@ public final class DetailPages {
         return new Page(Kind.PLAYER, name, sub, b, "", "");
     }
 
+    /**
+     * A nation panel from the map alone, for when {@code /v4} will not answer.
+     *
+     * <p>EarthMC published a keyless endpoint for towns and nothing else, so unlike the town panel
+     * this has no request to fall back on. It is built the way {@link #alliance} is instead, out of
+     * the towns the map is already drawing: each carries its nation and its capital flag in the
+     * squaremap tooltip -- the same source the capital stars read when no key is set -- so a
+     * nation's town roll, its capital and its claimed area all come free.
+     *
+     * <p>Residents, bank, king, founding date, allies and ranks are nation-level and live only
+     * behind the key. They are left out rather than drawn empty.
+     *
+     * <p>Returns null when no town on the map claims the name, which is the honest answer for a
+     * nation that is misspelt, fallen, or simply not loaded yet.
+     */
+    public static Page mapNation(String nationName) {
+        if (nationName == null || nationName.isBlank()) return null;
+        String want = nationName.trim();
+        String display = want;
+        String capital = "";
+        int chunks = 0;
+        List<String> towns = new ArrayList<>();
+        for (TownData t : TownyMapMod.currentTowns()) {
+            String n = TownyMapMod.townNationOf(t.key());
+            if (n == null || !n.trim().equalsIgnoreCase(want)) continue;
+            display = n.trim();                     // the map's spelling of it, not the caller's
+            towns.add(t.name());
+            chunks += t.approximateChunks();
+            if (TownyMapMod.isTownCapital(t.key())) capital = t.name();
+        }
+        if (towns.isEmpty()) return null;
+        towns.sort(String.CASE_INSENSITIVE_ORDER);
+
+        List<DetailScreen.Block> b = new ArrayList<>();
+        b.add(new Cols(List.of(
+                new Col("Capital", orDash(capital), capital.isBlank() ? null : new Ref(Kind.TOWN, capital)),
+                new Col("Towns", String.valueOf(towns.size())),
+                new Col("Chunks", String.format("%,d", chunks)))));
+        addAllianceBlocks(b, display);
+        b.add(new Rule());
+        addNames(b, "Towns", towns, Kind.TOWN);
+        return new Page(Kind.NATION, display, towns.size() + " towns", b, "", "");
+    }
+
     /** The Expand panel for an ARCHIVED nation — derived entirely from that date's member towns: the towns
      *  themselves, their residents and their chunk totals. Nation-level data the snapshot can't give (king,
      *  founded, bank, bonus, over-claim, allies…) is omitted. */

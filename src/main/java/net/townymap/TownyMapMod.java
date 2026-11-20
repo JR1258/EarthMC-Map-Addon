@@ -807,6 +807,12 @@ public class TownyMapMod implements ClientModInitializer {
         return townNationAt(townKey);
     }
 
+    /** Whether a town is its nation's capital, from the same tooltip. Needs no key, which is why the
+     *  capital stars keep working without one. */
+    public static boolean isTownCapital(String townKey) {
+        return apiClient != null && apiClient.isTownCapital(townKey);
+    }
+
     // ── Clean map screenshot ─────────────────────────────────────────────────
     // A plain F2 grabs the map with all of our chrome on top — buttons, search bar, panels — which is not
     // what anyone wants to paste into Discord. Arming this hides our own UI for one frame and captures the
@@ -3473,9 +3479,16 @@ public class TownyMapMod implements ClientModInitializer {
         future.thenAccept(page -> client.execute(() -> {
             if (client.gui.screen() != screen) return;   // navigated away while the fetch was in flight
             if (page == null) {
-                // API opt-outs never resolve. Town rosters have no opt-out, so show what they do carry
-                // rather than a bare "not found" -- same fallback the map popup uses.
-                net.townymap.gui.DetailScreen.Page fallback = rosterPlayerPage(kind, name);
+                // Two ways to get here: an API opt-out, which never resolves, and no key at all,
+                // where nothing /v4 serves resolves either. Both get whatever the map can answer
+                // with on its own rather than a bare "not found".
+                //
+                // On the client thread on purpose -- these read the live town list rather than the
+                // network, so they belong where every other reader of it runs.
+                net.townymap.gui.DetailScreen.Page fallback =
+                        kind == net.townymap.gui.DetailScreen.Kind.NATION
+                                ? net.townymap.gui.DetailPages.mapNation(name)
+                                : rosterPlayerPage(kind, name);
                 if (fallback != null) screen.setPage(fallback);
                 else screen.markFailed();
             } else {

@@ -3408,8 +3408,18 @@ public class TownyMapMod implements ClientModInitializer {
         if (earthMcApi == null) return;
 
         java.util.concurrent.CompletableFuture<net.townymap.gui.DetailScreen.Page> future = switch (kind) {
+            // The same fallback the popup has had since the keyed API started refusing unkeyed
+            // requests. Without it the expanded panel was the one place in the addon that still
+            // treated "no key" as "no such town" -- right-click showed the card, Expand showed
+            // "Nothing found", for the same town in the same second. Costs nothing when the keyed
+            // request succeeds, and nothing extra when there is no key, because apiAllowed() turns
+            // that request back before a socket is opened.
             case TOWN -> earthMcApi.fetchTownFull(name)
-                    .thenApply(d -> d == null ? null : net.townymap.gui.DetailPages.town(d));
+                    .thenApply(d -> d == null ? null : net.townymap.gui.DetailPages.town(d))
+                    .thenCompose(page -> page != null
+                            ? java.util.concurrent.CompletableFuture.completedFuture(page)
+                            : earthMcApi.fetchMapTown(name).thenApply(
+                                    m -> m == null ? null : net.townymap.gui.DetailPages.town(m)));
             case PLAYER -> earthMcApi.fetchPlayerFull(name)
                     .thenApply(d -> d == null ? null : net.townymap.gui.DetailPages.player(d));
             case NATION -> earthMcApi.fetchNationFull(name)

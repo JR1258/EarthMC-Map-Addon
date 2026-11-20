@@ -42,10 +42,17 @@ public final class ApiKeyCapture {
 
     /**
      * How long to wait after the command goes out before concluding EarthMC had nothing to hand
-     * back. Long enough to cover a round trip to a server that is thinking; short enough that the
-     * player has not yet started wondering what went wrong.
+     * back.
+     *
+     * <p>Six seconds was a guess and the logs disagreed with it. Two live captures took 12 and 13
+     * seconds from the window opening to the key landing, with nothing in between but a keypress,
+     * which puts {@code /api key copy} itself at the better part of ten. So ten is a floor, not a
+     * margin: raise it before ever lowering it.
+     *
+     * <p>Firing early is not fatal, only wrong-sounding -- the key still saves when it does arrive.
+     * That is why the message it triggers asks rather than announces.
      */
-    private static final long ANSWER_GRACE_MS = 6_000L;
+    private static final long ANSWER_GRACE_MS = 10_000L;
 
     private static volatile long armedUntilMs = 0L;
     private static volatile long copySentAtMs = 0L;
